@@ -204,22 +204,26 @@ async def test_command(interaction: discord.Interaction, role: discord.Role = No
   )
 
 
-# --- 複数ロール一括付与パネル作成コマンド ---
+# --- 複数ロール一括付与パネル作成コマンド（最大10個対応） ---
 @bot.tree.command(
     name="addrole",
-    description="【管理者用】複数のロールをまとめて取得できるパネル（ボタンまたはリアクション）を作成します",
+    description="【管理者用】最大10個までのロールをまとめて取得できるパネルを作成します",
 )
 @app_commands.default_permissions(administrator=True)
 @app_commands.describe(
     method="付与方式を選択してください",
     title="埋め込みのタイトル",
     description="説明文",
-    role1="対象ロール1",
-    label_or_emoji1="ロール1のボタン文字または絵文字",
-    role2="対象ロール2（任意）",
-    label_or_emoji2="ロール2のボタン文字または絵文字（任意）",
-    role3="対象ロール3（任意）",
-    label_or_emoji3="ロール3のボタン文字または絵文字（任意）",
+    role1="対象ロール1", label_or_emoji1="ロール1のボタン文字または絵文字",
+    role2="対象ロール2（任意）", label_or_emoji2="ロール2の文字/絵文字（任意）",
+    role3="対象ロール3（任意）", label_or_emoji3="ロール3の文字/絵文字（任意）",
+    role4="対象ロール4（任意）", label_or_emoji4="ロール4の文字/絵文字（任意）",
+    role5="対象ロール5（任意）", label_or_emoji5="ロール5の文字/絵文字（任意）",
+    role6="対象ロール6（任意）", label_or_emoji6="ロール6の文字/絵文字（任意）",
+    role7="対象ロール7（任意）", label_or_emoji7="ロール7の文字/絵文字（任意）",
+    role8="対象ロール8（任意）", label_or_emoji8="ロール8の文字/絵文字（任意）",
+    role9="対象ロール9（任意）", label_or_emoji9="ロール9の文字/絵文字（任意）",
+    role10="対象ロール10（任意）", label_or_emoji10="ロール10の文字/絵文字（任意）",
 )
 @app_commands.choices(
     method=[
@@ -232,26 +236,41 @@ async def addrole(
     method: str,
     title: str,
     description: str,
-    role1: discord.Role,
-    label_or_emoji1: str,
-    role2: discord.Role = None,
-    label_or_emoji2: str = None,
-    role3: discord.Role = None,
-    label_or_emoji3: str = None,
+    role1: discord.Role, label_or_emoji1: str,
+    role2: discord.Role = None, label_or_emoji2: str = None,
+    role3: discord.Role = None, label_or_emoji3: str = None,
+    role4: discord.Role = None, label_or_emoji4: str = None,
+    role5: discord.Role = None, label_or_emoji5: str = None,
+    role6: discord.Role = None, label_or_emoji6: str = None,
+    role7: discord.Role = None, label_or_emoji7: str = None,
+    role8: discord.Role = None, label_or_emoji8: str = None,
+    role9: discord.Role = None, label_or_emoji9: str = None,
+    role10: discord.Role = None, label_or_emoji10: str = None,
 ):
-  roles_data = [(role1, label_or_emoji1)]
-  if role2 and label_or_emoji2:
-    roles_data.append((role2, label_or_emoji2))
-  if role3 and label_or_emoji3:
-    roles_data.append((role3, label_or_emoji3))
+  raw_roles = [
+      (role1, label_or_emoji1), (role2, label_or_emoji2),
+      (role3, label_or_emoji3), (role4, label_or_emoji4),
+      (role5, label_or_emoji5), (role6, label_or_emoji6),
+      (role7, label_or_emoji7), (role8, label_or_emoji8),
+      (role9, label_or_emoji9), (role10, label_or_emoji10),
+  ]
 
-  for r, _ in roles_data:
-    if interaction.guild.me.top_role <= r:
-      await interaction.response.send_message(
-          f"❌ 指定されたロール（{r.name}）がボットのロールよりも上にあるため、管理できません。",
-          ephemeral=True,
-      )
-      return
+  roles_data = []
+  for r, label in raw_roles:
+    if r and label:
+      if interaction.guild.me.top_role <= r:
+        await interaction.response.send_message(
+            f"❌ 指定されたロール（{r.name}）がボットのロールよりも上にあるため管理できません。",
+            ephemeral=True,
+        )
+        return
+      roles_data.append((r, label))
+
+  if not roles_data:
+    await interaction.response.send_message(
+        "❌ 有効なロールとラベル/絵文字が設定されていません。", ephemeral=True
+    )
+    return
 
   embed = discord.Embed(title=title, description=description, color=discord.Color.blue())
 
