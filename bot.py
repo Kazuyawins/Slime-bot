@@ -265,17 +265,15 @@ async def addrole(
         )
         return
       
-      # ボタンの場合、外部絵文字（<:name:id>）がラベルに含まれているか解析してDiscordのEmojiオブジェクトに変換を試みる
       emoji_obj = None
       button_label = label
       custom_emoji_match = re.match(r"<(a?):([a-zA-Z0-9\_]+):(\d+)>", label)
       if custom_emoji_match:
         animated, name, emoji_id = custom_emoji_match.groups()
         emoji_obj = discord.PartialEmoji(name=name, id=int(emoji_id), animated=bool(animated))
-        # ラベルから絵文字部分を除外するか、そのままボタンのラベル文字にするか選択（絵文字オブジェクトを設定すれば文字だけでもOK）
         button_label = label.replace(custom_emoji_match.group(0), "").strip()
         if not button_label:
-          button_label = name  # ラベルが空になる場合は絵文字名を使用
+          button_label = name
 
       roles_data.append((r, button_label, emoji_obj, label))
 
@@ -301,13 +299,12 @@ async def addrole(
       reaction_dict[str(raw_emoji)] = r.id
 
     embed.add_field(name="付与ロール一覧", value=field_text, inline=False)
-    embed.set_footer(text="下のリアクションを押すとロールが切り替わります")
+    embed.set_footer(text="下のリアクションを押すとロールが切り替わり、自動で削除されます")
     
     msg = await interaction.channel.send(embed=embed)
     
     for _, _, _, raw_emoji in roles_data:
       try:
-        # カスタム絵文字（<:name:id>）や通常の絵文字をそのまま追加
         match = re.match(r"<(a?):([a-zA-Z0-9\_]+):(\d+)>", raw_emoji)
         if match:
           _, _, emoji_id = match.groups()
@@ -366,7 +363,7 @@ class MultiRoleButtonView(discord.ui.View):
       self.add_item(MultiRoleToggleButton(role.id, label, emoji))
 
 
-# --- リアクション追加時のロール付与 ---
+# --- リアクション追加時のロール付与（トグル式 ＆ リアクション自動削除） ---
 @bot.event
 async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
   if payload.member and payload.member.bot:
@@ -378,44 +375,7 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
   if not guild:
     return
 
-  # 絵文字のキー判定（カスタム絵文字の場合は <:name:id> 形式やフォーマットに対応）
-  emoji_key = str(payload.emoji)
-  if payload.emoji.id:
-    # カスタム絵文字の場合
-    animated_prefix = "a" if payload.emoji.animated else ""
-    emoji_key = f"<{animated_prefix}:{payload.emoji.name}:{payload.emoji.id}>"
-
-  role_id = REACTION_ROLES[payload.message_id].get(emoji_key)
-  if not role_id:
-    # 念のため別のキー形式でも照合
-    for k, r_id in REACTION_ROLES[payload.message_id].items():
-      if str(payload.emoji.id) in k or payload.emoji.name in k:
-        role_id = r_id
-        break
-
-  if not role_id:
-    return
-
-  role = guild.get_role(role_id)
-  if role:
-    member = guild.get_member(payload.user_id)
-    if member and role not in member.roles:
-      try:
-        await member.add_roles(role)
-      except Exception:
-        pass
-
-
-# --- リアクション削除時のロール解除 ---
-@bot.event
-async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
-  if payload.message_id not in REACTION_ROLES:
-    return
-
-  guild = bot.get_guild(payload.guild_id)
-  if not guild:
-    return
-
+  # ユーザーが押したリアクションの絵文字キーを作成
   emoji_key = str(payload.emoji)
   if payload.emoji.id:
     animated_prefix = "a" if payload.emoji.animated else ""
@@ -434,11 +394,28 @@ async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
   role = guild.get_role(role_id)
   if role:
     member = guild.get_member(payload.user_id)
-    if member and role in member.roles:
-      try:
+    channel = guild.get_channel(payload.channel_id)
+
+    # ユーザーがすでにロールを持っているか判定してトグル（付与/解除）する
+    try:
+      if role in member.roles:
         await member.remove_roles(role)
+        action_text = f"❌ ロール「{role.name}」を解除しました。"
+      else:
+        await member.add_roles(role)
+        action_text = f"🎉 ロール「{role.name}」を付与しました！"
+
+      # 押されたリアクションを即座に削除する
+      try:
+        msg = await channel.fetch_message(payload.message_id)
+        await msg.remove_reaction(payload.emoji, member)
       except Exception:
         pass
+
+    except discord.Forbidden:
+      pass
+    except Exception:
+      pass
 
 
 @bot.tree.command(
