@@ -24,6 +24,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 # --- 設定の永続化ファイル管理 ---
 CONFIG_FILE = "channel_config.txt"
 RESPONSES_FILE = "custom_responses.txt"
+ROLE_PANELS_FILE = "role_panels.txt"
 
 def load_notification_channel_id():
   env_channel = os.getenv("CHANNEL_ID")
@@ -55,10 +56,9 @@ def load_custom_responses():
     try:
       with open(RESPONSES_FILE, "r", encoding="utf-8") as f:
         data = json.load(f)
-        # JSONのキーは文字列になるため、int（guild_id）に変換
         return {int(k): v for k, v in data.items()}
     except Exception as e:
-      print(f"カスタム返신의 読み込みに失敗しました: {e}")
+      print(f"カスタム返信の読み込みに失敗しました: {e}")
   return {}
 
 def save_custom_responses():
@@ -70,15 +70,32 @@ def save_custom_responses():
 
 CUSTOM_RESPONSES = load_custom_responses()
 
+# --- リアクションロール管理用データの永続化 ---
+def load_role_panels():
+  if os.path.exists(ROLE_PANELS_FILE):
+    try:
+      with open(ROLE_PANELS_FILE, "r", encoding="utf-8") as f:
+        data = json.load(f)
+        return {int(k): {str(ek): int(rk) for ek, rk in v.items()} for k, v in data.items()}
+    except Exception as e:
+      print(f"リアクションロールパネルの読み込みに失敗しました: {e}")
+  return {}
+
+def save_role_panels():
+  try:
+    with open(ROLE_PANELS_FILE, "w", encoding="utf-8") as f:
+      json.dump(REACTION_ROLES, f, ensure_ascii=False, indent=2)
+  except Exception as e:
+    print(f"リアクションロールパネルの保存に失敗しました: {e}")
+
+REACTION_ROLES = load_role_panels()
+
 # --- サーバーごとのウェルカムメッセージ設定保持用辞書 {guild_id: settings} ---
 WELCOME_SETTINGS = {}
 
 # 退出通知用の変数
 LEAVE_GUILD_ID = None
 LEAVE_CHANNEL_ID = None
-
-# リアクションロール管理用 {message_id: {emoji_str: role_id}}
-REACTION_ROLES = {}
 
 JST = ZoneInfo("Asia/Tokyo")
 
@@ -187,18 +204,22 @@ async def test_command(interaction: discord.Interaction, role: discord.Role = No
   )
 
 
-# --- ロール付与パネル作成コマンド（リアクション or パネルボタン選択） ---
+# --- 複数ロール一括付与パネル作成コマンド ---
 @bot.tree.command(
     name="addrole",
-    description="【管理者用】リアクションまたはボタンでロールを付与・解除できるパネルを作成します",
+    description="【管理者用】複数のロールをまとめて取得できるパネル（ボタンまたはリアクション）を作成します",
 )
 @app_commands.default_permissions(administrator=True)
 @app_commands.describe(
-    role="付与・解除するロール",
     method="付与方式を選択してください",
     title="埋め込みのタイトル",
     description="説明文",
-    button_or_emoji="ボタンの文字 または リアクション用絵文字",
+    role1="対象ロール1",
+    label_or_emoji1="ロール1のボタン文字または絵文字",
+    role2="対象ロール2（任意）",
+    label_or_emoji2="ロール2のボタン文字または絵文字（任意）",
+    role3="対象ロール3（任意）",
+    label_or_emoji3="ロール3のボタン文字または絵文字（任意）",
 )
 @app_commands.choices(
     method=[
@@ -208,107 +229,101 @@ async def test_command(interaction: discord.Interaction, role: discord.Role = No
 )
 async def addrole(
     interaction: discord.Interaction,
-    role: discord.Role,
     method: str,
     title: str,
     description: str,
-    button_or_emoji: str,
+    role1: discord.Role,
+    label_or_emoji1: str,
+    role2: discord.Role = None,
+    label_or_emoji2: str = None,
+    role3: discord.Role = None,
+    label_or_emoji3: str = None,
 ):
-  if interaction.guild.me.top_role <= role:
-    await interaction.response.send_message(
-        "❌ 指定されたロールがボットのロールよりも上にあるため、管理できません。",
-        ephemeral=True,
-    )
-    return
+  roles_data = [(role1, label_or_emoji1)]
+  if role2 and label_or_emoji2:
+    roles_data.append((role2, label_or_emoji2))
+  if role3 and label_or_emoji3:
+    roles_data.append((role3, label_or_emoji3))
 
-  embed = discord.Embed(
-      title=title, description=description, color=discord.Color.blue()
-  )
-
-  if method == "button":
-    view = RoleButtonView(role.id, button_or_emoji)
-    await interaction.channel.send(embed=embed, view=view)
-    await interaction.response.send_message(
-        "✅ ボタン式のロールパネルを作成しました！", ephemeral=True
-    )
-  elif method == "reaction":
-    embed.add_field(name="付与ロール", value=role.mention)
-    embed.set_footer(text=f"下のリアクション ({button_or_emoji}) を押すとロールが切り替わります")
-    msg = await interaction.channel.send(embed=embed)
-    try:
-      await msg.add_reaction(button_or_emoji)
-    except Exception as e:
+  for r, _ in roles_data:
+    if interaction.guild.me.top_role <= r:
       await interaction.response.send_message(
-          f"❌ 絵文字の追加に失敗しました。正しい絵文字か確認してください: {e}",
+          f"❌ 指定されたロール（{r.name}）がボットのロールよりも上にあるため、管理できません。",
           ephemeral=True,
       )
       return
 
-    emoji_key = str(button_or_emoji)
-    REACTION_ROLES[msg.id] = {emoji_key: role.id}
+  embed = discord.Embed(title=title, description=description, color=discord.Color.blue())
+
+  if method == "button":
+    view = MultiRoleButtonView(roles_data)
+    await interaction.channel.send(embed=embed, view=view)
     await interaction.response.send_message(
-        "✅ リアクション式のロールパネルを作成しました！", ephemeral=True
+        "✅ 複数ロール一括取得の**ボタンパネル**を作成しました！", ephemeral=True
+    )
+  elif method == "reaction":
+    field_text = ""
+    reaction_dict = {}
+    for r, emoji in roles_data:
+      field_text += f"{emoji} : {r.mention}\n"
+      reaction_dict[str(emoji)] = r.id
+
+    embed.add_field(name="付与ロール一覧", value=field_text, inline=False)
+    embed.set_footer(text="下のリアクションを押すとロールが切り替わります")
+    
+    msg = await interaction.channel.send(embed=embed)
+    
+    for _, emoji in roles_data:
+      try:
+        await msg.add_reaction(emoji)
+      except Exception:
+        pass
+
+    REACTION_ROLES[msg.id] = reaction_dict
+    save_role_panels()
+
+    await interaction.response.send_message(
+        "✅ 複数ロール一括取得の**リアクションパネル**を作成しました！", ephemeral=True
     )
 
 
-class RoleToggleButton(discord.ui.Button):
-  def __init__(self, role_id: int = None, button_label: str = "ロールを受け取る"):
-    custom_id = f"role_button_{role_id}" if role_id else "role_button_default"
+class MultiRoleToggleButton(discord.ui.Button):
+  def __init__(self, role_id: int, label: str):
     super().__init__(
-        label=button_label,
+        label=label,
         style=discord.ButtonStyle.primary,
-        custom_id=custom_id,
+        custom_id=f"multirole_{role_id}",
     )
     self.role_id = role_id
 
   async def callback(self, interaction: discord.Interaction):
-    role_id = self.role_id
-    if not role_id:
-      custom_id = (interaction.data or {}).get("custom_id", "")
-      parts = custom_id.split("_")
-      if parts and parts[-1].isdigit():
-        role_id = int(parts[-1])
-
     if interaction.guild is None:
-      await interaction.response.send_message(
-          "❌ サーバー内でのみ使用できます。", ephemeral=True
-      )
+      await interaction.response.send_message("❌ サーバー内でのみ使用できます。", ephemeral=True)
       return
 
-    role = interaction.guild.get_role(role_id) if role_id else None
+    role = interaction.guild.get_role(self.role_id)
     if role is None:
-      await interaction.response.send_message(
-          "❌ ロールが見つかりませんでした。管理者にパネルの再作成を依頼してください。",
-          ephemeral=True,
-      )
+      await interaction.response.send_message("❌ ロールが見つかりませんでした。", ephemeral=True)
       return
 
     try:
       if role in interaction.user.roles:
         await interaction.user.remove_roles(role)
-        await interaction.response.send_message(
-            f"❌ ロール「{role.name}」を解除しました。", ephemeral=True
-        )
+        await interaction.response.send_message(f"❌ ロール「{role.name}」を解除しました。", ephemeral=True)
       else:
         await interaction.user.add_roles(role)
-        await interaction.response.send_message(
-            f"🎉 ロール「{role.name}」を付与しました！", ephemeral=True
-        )
+        await interaction.response.send_message(f"🎉 ロール「{role.name}」を付与しました！", ephemeral=True)
     except discord.Forbidden:
-      await interaction.response.send_message(
-          "❌ ボットにロールを管理する権限がありません。", ephemeral=True
-      )
+      await interaction.response.send_message("❌ ボットにロールを管理する権限がありません。", ephemeral=True)
     except Exception as e:
-      await interaction.response.send_message(
-          f"❌ エラーが発生しました: {e}", ephemeral=True
-      )
+      await interaction.response.send_message(f"❌ エラーが発生しました: {e}", ephemeral=True)
 
 
-class RoleButtonView(discord.ui.View):
-  def __init__(self, role_id: int = None, button_label: str = "ロールを受け取る"):
+class MultiRoleButtonView(discord.ui.View):
+  def __init__(self, roles_data):
     super().__init__(timeout=None)
-    self.role_id = role_id
-    self.add_item(RoleToggleButton(role_id, button_label))
+    for role, label in roles_data:
+      self.add_item(MultiRoleToggleButton(role.id, label))
 
 
 # --- リアクション追加時のロール付与 ---
@@ -378,7 +393,7 @@ async def addresponse(interaction: discord.Interaction, keyword: str, response: 
     CUSTOM_RESPONSES[guild_id] = {}
 
   CUSTOM_RESPONSES[guild_id][keyword] = response
-  save_custom_responses()  # ファイルへ保存
+  save_custom_responses()
   await interaction.response.send_message(
       f"✅ キーワード「{keyword}」に対するカスタム返信を登録・保存しました！\n返信内容: {response}",
       ephemeral=True,
@@ -395,7 +410,7 @@ async def delresponse(interaction: discord.Interaction, keyword: str):
   guild_id = interaction.guild.id
   if guild_id in CUSTOM_RESPONSES and keyword in CUSTOM_RESPONSES[guild_id]:
     del CUSTOM_RESPONSES[guild_id][keyword]
-    save_custom_responses()  # ファイルへ保存
+    save_custom_responses()
     await interaction.response.send_message(
         f"🗑️ キーワード「{keyword}」のカスタム返信を削除しました。",
         ephemeral=True,
@@ -763,7 +778,6 @@ async def on_ready():
 
   if not getattr(bot, "_persistent_views_added", False):
     bot.add_view(CaptchaPanelView())
-    bot.add_view(RoleButtonView())
     bot._persistent_views_added = True
 
   try:
