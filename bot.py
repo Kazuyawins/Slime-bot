@@ -204,7 +204,7 @@ async def test_command(interaction: discord.Interaction, role: discord.Role = No
   )
 
 
-# --- 複数ロール一括付与パネル作成コマンド（最大10個対応） ---
+# --- 複数ロール一括付与パネル作成コマンド（最大10個対応・外部絵文字対応） ---
 @bot.tree.command(
     name="addrole",
     description="【管理者用】最大10個までのロールをまとめて取得できるパネルを作成します",
@@ -264,7 +264,20 @@ async def addrole(
             ephemeral=True,
         )
         return
-      roles_data.append((r, label))
+      
+      # ボタンの場合、外部絵文字（<:name:id>）がラベルに含まれているか解析してDiscordのEmojiオブジェクトに変換を試みる
+      emoji_obj = None
+      button_label = label
+      custom_emoji_match = re.match(r"<(a?):([a-zA-Z0-9\_]+):(\d+)>", label)
+      if custom_emoji_match:
+        animated, name, emoji_id = custom_emoji_match.groups()
+        emoji_obj = discord.PartialEmoji(name=name, id=int(emoji_id), animated=bool(animated))
+        # ラベルから絵文字部分を除外するか、そのままボタンのラベル文字にするか選択（絵文字オブジェクトを設定すれば文字だけでもOK）
+        button_label = label.replace(custom_emoji_match.group(0), "").strip()
+        if not button_label:
+          button_label = name  # ラベルが空になる場合は絵文字名を使用
+
+      roles_data.append((r, button_label, emoji_obj, label))
 
   if not roles_data:
     await interaction.response.send_message(
@@ -283,18 +296,25 @@ async def addrole(
   elif method == "reaction":
     field_text = ""
     reaction_dict = {}
-    for r, emoji in roles_data:
-      field_text += f"{emoji} : {r.mention}\n"
-      reaction_dict[str(emoji)] = r.id
+    for r, _, _, raw_emoji in roles_data:
+      field_text += f"{raw_emoji} : {r.mention}\n"
+      reaction_dict[str(raw_emoji)] = r.id
 
     embed.add_field(name="付与ロール一覧", value=field_text, inline=False)
     embed.set_footer(text="下のリアクションを押すとロールが切り替わります")
     
     msg = await interaction.channel.send(embed=embed)
     
-    for _, emoji in roles_data:
+    for _, _, _, raw_emoji in roles_data:
       try:
-        await msg.add_reaction(emoji)
+        # カスタム絵文字（<:name:id>）や通常の絵文字をそのまま追加
+        match = re.match(r"<(a?):([a-zA-Z0-9\_]+):(\d+)>", raw_emoji)
+        if match:
+          _, _, emoji_id = match.groups()
+          emoji_to_add = bot.get_emoji(int(emoji_id)) or raw_emoji
+        else:
+          emoji_to_add = raw_emoji
+        await msg.add_reaction(emoji_to_add)
       except Exception:
         pass
 
@@ -307,9 +327,10 @@ async def addrole(
 
 
 class MultiRoleToggleButton(discord.ui.Button):
-  def __init__(self, role_id: int, label: str):
+  def __init__(self, role_id: int, label: str, emoji: discord.PartialEmoji = None):
     super().__init__(
-        label=label,
+        label=label if label else None,
+        emoji=emoji,
         style=discord.ButtonStyle.primary,
         custom_id=f"multirole_{role_id}",
     )
@@ -341,8 +362,8 @@ class MultiRoleToggleButton(discord.ui.Button):
 class MultiRoleButtonView(discord.ui.View):
   def __init__(self, roles_data):
     super().__init__(timeout=None)
-    for role, label in roles_data:
-      self.add_item(MultiRoleToggleButton(role.id, label))
+    for role, label, emoji, _ in roles_data:
+      self.add_item(MultiRoleToggleButton(role.id, label, emoji))
 
 
 # --- リアクション追加時のロール付与 ---
@@ -357,8 +378,21 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
   if not guild:
     return
 
+  # 絵文字のキー判定（カスタム絵文字の場合は <:name:id> 形式やフォーマットに対応）
   emoji_key = str(payload.emoji)
+  if payload.emoji.id:
+    # カスタム絵文字の場合
+    animated_prefix = "a" if payload.emoji.animated else ""
+    emoji_key = f"<{animated_prefix}:{payload.emoji.name}:{payload.emoji.id}>"
+
   role_id = REACTION_ROLES[payload.message_id].get(emoji_key)
+  if not role_id:
+    # 念のため別のキー形式でも照合
+    for k, r_id in REACTION_ROLES[payload.message_id].items():
+      if str(payload.emoji.id) in k or payload.emoji.name in k:
+        role_id = r_id
+        break
+
   if not role_id:
     return
 
@@ -383,7 +417,17 @@ async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
     return
 
   emoji_key = str(payload.emoji)
+  if payload.emoji.id:
+    animated_prefix = "a" if payload.emoji.animated else ""
+    emoji_key = f"<{animated_prefix}:{payload.emoji.name}:{payload.emoji.id}>"
+
   role_id = REACTION_ROLES[payload.message_id].get(emoji_key)
+  if not role_id:
+    for k, r_id in REACTION_ROLES[payload.message_id].items():
+      if str(payload.emoji.id) in k or payload.emoji.name in k:
+        role_id = r_id
+        break
+
   if not role_id:
     return
 
