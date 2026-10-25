@@ -364,7 +364,6 @@ class MultiRoleButtonView(discord.ui.View):
       for role, label, emoji, _ in roles_data:
         self.add_item(MultiRoleToggleButton(role.id, label, emoji))
     else:
-      # 再起動時の永続化ビュー復元用フォールバック
       self.add_item(MultiRoleToggleButton(0, "ロールを受け取る"))
 
 
@@ -849,6 +848,7 @@ async def on_ready():
   print(f"ログインしました: {bot.user} (ID: {bot.user.id})")
 
   if not getattr(bot, "_persistent_views_added", False):
+    # 認証パネルとロール付与パネルの両方を永続ビューとして登録
     bot.add_view(CaptchaPanelView())
     bot.add_view(MultiRoleButtonView())
     bot._persistent_views_added = True
