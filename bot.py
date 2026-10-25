@@ -27,18 +27,19 @@ RESPONSES_FILE = "custom_responses.txt"
 ROLE_PANELS_FILE = "role_panels.txt"
 
 def load_notification_channel_id():
-  env_channel = os.getenv("CHANNEL_ID")
-  if env_channel and env_channel.isdigit():
-    return int(env_channel)
-
   if os.path.exists(CONFIG_FILE):
     try:
       with open(CONFIG_FILE, "r", encoding="utf-8") as f:
         content = f.read().strip()
         if content.isdigit():
           return int(content)
-    except Exception:
-      pass
+    except Exception as e:
+      print(f"チャンネル設定の読み込みに失敗しました: {e}")
+
+  env_channel = os.getenv("CHANNEL_ID")
+  if env_channel and env_channel.isdigit():
+    return int(env_channel)
+
   return None
 
 def save_notification_channel_id(channel_id):
@@ -264,7 +265,7 @@ async def addrole(
             ephemeral=True,
         )
         return
-      
+
       emoji_obj = None
       button_label = label
       custom_emoji_match = re.match(r"<(a?):([a-zA-Z0-9\_]+):(\d+)>", label)
@@ -300,9 +301,9 @@ async def addrole(
 
     embed.add_field(name="付与ロール一覧", value=field_text, inline=False)
     embed.set_footer(text="下のリアクションを押すとロールが切り替わり、自動で削除されます")
-    
+
     msg = await interaction.channel.send(embed=embed)
-    
+
     for _, _, _, raw_emoji in roles_data:
       try:
         match = re.match(r"<(a?):([a-zA-Z0-9\_]+):(\d+)>", raw_emoji)
@@ -357,10 +358,14 @@ class MultiRoleToggleButton(discord.ui.Button):
 
 
 class MultiRoleButtonView(discord.ui.View):
-  def __init__(self, roles_data):
+  def __init__(self, roles_data=None):
     super().__init__(timeout=None)
-    for role, label, emoji, _ in roles_data:
-      self.add_item(MultiRoleToggleButton(role.id, label, emoji))
+    if roles_data:
+      for role, label, emoji, _ in roles_data:
+        self.add_item(MultiRoleToggleButton(role.id, label, emoji))
+    else:
+      # 再起動時の永続化ビュー復元用フォールバック
+      self.add_item(MultiRoleToggleButton(0, "ロールを受け取る"))
 
 
 # --- リアクション追加時のロール付与（トグル式 ＆ リアクション自動削除） ---
@@ -375,7 +380,6 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
   if not guild:
     return
 
-  # ユーザーが押したリアクションの絵文字キーを作成
   emoji_key = str(payload.emoji)
   if payload.emoji.id:
     animated_prefix = "a" if payload.emoji.animated else ""
@@ -396,16 +400,12 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
     member = guild.get_member(payload.user_id)
     channel = guild.get_channel(payload.channel_id)
 
-    # ユーザーがすでにロールを持っているか判定してトグル（付与/解除）する
     try:
       if role in member.roles:
         await member.remove_roles(role)
-        action_text = f"❌ ロール「{role.name}」を解除しました。"
       else:
         await member.add_roles(role)
-        action_text = f"🎉 ロール「{role.name}」を付与しました！"
 
-      # 押されたリアクションを即座に削除する
       try:
         msg = await channel.fetch_message(payload.message_id)
         await msg.remove_reaction(payload.emoji, member)
@@ -460,6 +460,38 @@ async def delresponse(interaction: discord.Interaction, keyword: str):
         f"❌ キーワード「{keyword}」は登録されていません。",
         ephemeral=True,
     )
+
+
+@bot.tree.command(
+    name="history",
+    description="このサーバーに登録されている完全一致メッセージの一覧を表示します",
+)
+@app_commands.default_permissions(manage_messages=True)
+async def history(interaction: discord.Interaction):
+  guild_id = interaction.guild.id
+  responses = CUSTOM_RESPONSES.get(guild_id, {})
+
+  if not responses:
+    await interaction.response.send_message(
+        "ℹ️ このサーバーに登録されている完全一致メッセージはありません。",
+        ephemeral=True,
+    )
+    return
+
+  embed = discord.Embed(
+      title="📜 登録された完全一致メッセージ一覧",
+      color=discord.Color.blue(),
+  )
+
+  for keyword, res in responses.items():
+    display_res = res if len(res) <= 100 else res[:97] + "..."
+    embed.add_field(
+        name=f"🔑 キーワード: {keyword}",
+        value=f"返信: {display_res}",
+        inline=False,
+    )
+
+  await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 @bot.tree.command(
@@ -818,6 +850,7 @@ async def on_ready():
 
   if not getattr(bot, "_persistent_views_added", False):
     bot.add_view(CaptchaPanelView())
+    bot.add_view(MultiRoleButtonView())
     bot._persistent_views_added = True
 
   try:
