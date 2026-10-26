@@ -26,6 +26,8 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 CONFIG_FILE = "channel_config.txt"
 RESPONSES_FILE = "custom_responses.txt"
 ROLE_PANELS_FILE = "role_panels.txt"
+WELCOME_FILE = "welcome_settings.txt"
+LEAVE_CONFIG_FILE = "leave_config.txt"
 
 def load_notification_channel_id():
   if os.path.exists(CONFIG_FILE):
@@ -92,12 +94,45 @@ def save_role_panels():
 
 REACTION_ROLES = load_role_panels()
 
-# --- サーバーごとのウェルカムメッセージ設定保持用辞書 {guild_id: settings} ---
-WELCOME_SETTINGS = {}
+# --- ウェルカムメッセージ設定の永続化管理 ---
+def load_welcome_settings():
+  if os.path.exists(WELCOME_FILE):
+    try:
+      with open(WELCOME_FILE, "r", encoding="utf-8") as f:
+        data = json.load(f)
+        return {int(k): v for k, v in data.items()}
+    except Exception as e:
+      print(f"ウェルカム設定の読み込みに失敗しました: {e}")
+  return {}
 
-# 退出通知用の変数
-LEAVE_GUILD_ID = None
-LEAVE_CHANNEL_ID = None
+def save_welcome_settings():
+  try:
+    with open(WELCOME_FILE, "w", encoding="utf-8") as f:
+      json.dump(WELCOME_SETTINGS, f, ensure_ascii=False, indent=2)
+  except Exception as e:
+    print(f"ウェルカム設定の保存に失敗しました: {e}")
+
+WELCOME_SETTINGS = load_welcome_settings()
+
+# --- 退出通知設定の永続化管理 ---
+def load_leave_settings():
+  if os.path.exists(LEAVE_CONFIG_FILE):
+    try:
+      with open(LEAVE_CONFIG_FILE, "r", encoding="utf-8") as f:
+        data = json.load(f)
+        return data.get("guild_id"), data.get("channel_id")
+    except Exception as e:
+      print(f"退出通知設定の読み込みに失敗しました: {e}")
+  return None, None
+
+def save_leave_settings(guild_id, channel_id):
+  try:
+    with open(LEAVE_CONFIG_FILE, "w", encoding="utf-8") as f:
+      json.dump({"guild_id": guild_id, "channel_id": channel_id}, f, ensure_ascii=False, indent=2)
+  except Exception as e:
+    print(f"退出通知設定の保存に失敗しました: {e}")
+
+LEAVE_GUILD_ID, LEAVE_CHANNEL_ID = load_leave_settings()
 
 JST = ZoneInfo("Asia/Tokyo")
 
@@ -204,6 +239,83 @@ async def test_command(interaction: discord.Interaction, role: discord.Role = No
       view=view,
       ephemeral=True,
   )
+
+
+# --- 設定のエクスポート（バックアップ）コマンド ---
+@bot.tree.command(
+    name="exportconfig",
+    description="【管理者用】現在のすべての設定データをJSONファイルとしてエクスポートします",
+)
+@app_commands.default_permissions(administrator=True)
+async def exportconfig(interaction: discord.Interaction):
+  export_data = {
+      "notification_channel_id": NOTIFICATION_CHANNEL_ID,
+      "custom_responses": {str(k): v for k, v in CUSTOM_RESPONSES.items()},
+      "reaction_roles": {str(k): v for k, v in REACTION_ROLES.items()},
+      "welcome_settings": {str(k): v for k, v in WELCOME_SETTINGS.items()},
+      "leave_guild_id": LEAVE_GUILD_ID,
+      "leave_channel_id": LEAVE_CHANNEL_ID,
+  }
+
+  json_bytes = json.dumps(export_data, ensure_ascii=False, indent=2).encode("utf-8")
+  file = discord.File(io.BytesIO(json_bytes), filename="bot_config_backup.json")
+
+  await interaction.response.send_message(
+      "📦 すべての設定データをエクスポートしました。バックアップとして保管してください：",
+      file=file,
+      ephemeral=True,
+  )
+
+
+# --- 設定のインポート（復元）コマンド ---
+@bot.tree.command(
+    name="importconfig",
+    description="【管理者用】エクスポートしたJSONファイルをアップロードして設定を復元します",
+)
+@app_commands.default_permissions(administrator=True)
+@app_commands.describe(file="エクスポートしたJSONファイル")
+async def importconfig(interaction: discord.Interaction, file: discord.Attachment):
+  global NOTIFICATION_CHANNEL_ID, CUSTOM_RESPONSES, REACTION_ROLES, WELCOME_SETTINGS, LEAVE_GUILD_ID, LEAVE_CHANNEL_ID
+
+  if not file.filename.endswith(".json"):
+    await interaction.response.send_message(
+        "❌ 拡張子が `.json` のファイルをアップロードしてください。", ephemeral=True
+    )
+    return
+
+  try:
+    file_bytes = await file.read()
+    data = json.loads(file_bytes.decode("utf-8"))
+
+    # データの反映と保存
+    NOTIFICATION_CHANNEL_ID = data.get("notification_channel_id")
+    if NOTIFICATION_CHANNEL_ID:
+      save_notification_channel_id(NOTIFICATION_CHANNEL_ID)
+
+    raw_responses = data.get("custom_responses", {})
+    CUSTOM_RESPONSES = {int(k): v for k, v in raw_responses.items()}
+    save_custom_responses()
+
+    raw_roles = data.get("reaction_roles", {})
+    REACTION_ROLES = {int(k): v for k, v in raw_roles.items()}
+    save_role_panels()
+
+    raw_welcome = data.get("welcome_settings", {})
+    WELCOME_SETTINGS = {int(k): v for k, v in raw_welcome.items()}
+    save_welcome_settings()
+
+    LEAVE_GUILD_ID = data.get("leave_guild_id")
+    LEAVE_CHANNEL_ID = data.get("leave_channel_id")
+    save_leave_settings(LEAVE_GUILD_ID, LEAVE_CHANNEL_ID)
+
+    await interaction.response.send_message(
+        "✅ 設定データのインポートと復元が正常に完了しました！", ephemeral=True
+    )
+  except Exception as e:
+    await interaction.response.send_message(
+        f"❌ 設定の読み込みに失敗しました（ファイル形式が不正な可能性があります）: {e}",
+        ephemeral=True,
+    )
 
 
 # --- 複数ロール一括付与パネル作成コマンド（最大10個対応・外部絵文字対応） ---
@@ -526,6 +638,7 @@ async def setwelcome(
       "mention": mention,
       "text": text,
   }
+  save_welcome_settings()
 
   status_str = "🟢 有効 (オン)" if enabled else "🔴 無効 (オフ)"
   mention_str = "あり" if mention else "なし"
@@ -549,8 +662,10 @@ async def setleave(interaction: discord.Interaction):
   global LEAVE_CHANNEL_ID, LEAVE_GUILD_ID
   LEAVE_GUILD_ID = interaction.guild.id
   LEAVE_CHANNEL_ID = interaction.channel.id
+  save_leave_settings(LEAVE_GUILD_ID, LEAVE_CHANNEL_ID)
+
   await interaction.response.send_message(
-      f"✅ このチャンネル（{interaction.channel.mention}）を退出時間記録の送信先に設定しました！",
+      f"✅ このチャンネル（{interaction.channel.mention}）を退出時間記録の送信先に設定し、保存しました！",
       ephemeral=True,
   )
 
