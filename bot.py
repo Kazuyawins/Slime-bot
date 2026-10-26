@@ -923,21 +923,18 @@ class LinkControlView(discord.ui.View):
       return
 
     try:
-      # ユーザーの元のメッセージを削除
+      # ユーザーの元のメッセージだけを削除（Botのパネルはそのまま残す）
       user_msg = await interaction.channel.fetch_message(self.user_message_id)
       await user_msg.delete()
+      await interaction.response.send_message("✅ 元のリンクを削除しました。", ephemeral=True)
     except discord.NotFound:
-      pass
+      await interaction.response.send_message(
+          "ℹ️ すでに削除されているか、見つかりませんでした。", ephemeral=True
+      )
     except Exception as e:
-      print(f"ユーザーメッセージの削除に失敗しました: {e}")
-
-    try:
-      # Botが送信したパネル（メッセージ）も一緒に削除
-      await interaction.message.delete()
-    except discord.NotFound:
-      pass
-    except Exception as e:
-      print(f"パネルの削除に失敗しました: {e}")
+      await interaction.response.send_message(
+          f"❌ 削除に失敗しました: {e}", ephemeral=True
+      )
 
 
 # --- メッセージ削除・編集のイベントハンドラー ---
