@@ -220,6 +220,32 @@ async def test_command(interaction: discord.Interaction, role: discord.Role = No
   )
 
 
+# --- 日付お知らせを任意のチャンネルにテスト送信するコマンド ---
+@bot.tree.command(
+    name="testchannel",
+    description="【管理者用】指定したチャンネルに日付お知らせのテストメッセージを送信します",
+)
+@app_commands.default_permissions(administrator=True)
+@app_commands.describe(channel="テスト送信先のチャンネル")
+async def testchannel(interaction: discord.Interaction, channel: discord.TextChannel):
+  now = datetime.datetime.now(JST)
+  weekdays = ["月曜日", "火曜日", "水曜日", "木曜日", "金曜日", "土曜日", "日曜日"]
+  weekday_str = weekdays[now.weekday()]
+  message_text = f"🧪 【テスト送信】日付が変わりました！\n本日は {now.month}月{now.day}日 ({weekday_str}) です。"
+
+  try:
+    await channel.send(message_text)
+    await interaction.response.send_message(
+        f"✅ {channel.mention} に日付お知らせのテストメッセージを送信しました！",
+        ephemeral=True,
+    )
+  except Exception as e:
+    await interaction.response.send_message(
+        f"❌ 送信に失敗しました（ボットに権限がない可能性があります）: {e}",
+        ephemeral=True,
+    )
+
+
 # --- 設定のエクスポート（バックアップ）コマンド ---
 @bot.tree.command(
     name="exportconfig",
@@ -372,7 +398,7 @@ async def addrole(
 class MultiRoleToggleButton(discord.ui.Button):
   def __init__(self, role_id: int, emoji):
     super().__init__(
-        label=None,  # 文字なし（絵文字のみ）
+        label=None,
         emoji=emoji,
         style=discord.ButtonStyle.primary,
         custom_id=f"multirole_{role_id}",
@@ -874,7 +900,6 @@ async def on_ready():
     bot.add_view(DeleteBotMessageView())
     bot.add_view(DeleteUserMessageView(0, 0))
 
-    # 再起動後もすべてのロールIDに対応する認証パネルおよびロールボタンを永続化登録する
     for guild in bot.guilds:
       for role in guild.roles:
         bot.add_view(CaptchaPanelView(role.id))
