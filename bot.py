@@ -25,7 +25,6 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 # --- 設定の永続化ファイル管理 ---
 CONFIG_FILE = "channel_config.txt"
 RESPONSES_FILE = "custom_responses.txt"
-ROLE_PANELS_FILE = "role_panels.txt"
 WELCOME_FILE = "welcome_settings.txt"
 LEAVE_CONFIG_FILE = "leave_config.txt"
 
@@ -73,26 +72,6 @@ def save_custom_responses():
     print(f"カスタム返信の保存に失敗しました: {e}")
 
 CUSTOM_RESPONSES = load_custom_responses()
-
-# --- リアクションロール管理用データの永続化 ---
-def load_role_panels():
-  if os.path.exists(ROLE_PANELS_FILE):
-    try:
-      with open(ROLE_PANELS_FILE, "r", encoding="utf-8") as f:
-        data = json.load(f)
-        return {int(k): {str(ek): int(rk) for ek, rk in v.items()} for k, v in data.items()}
-    except Exception as e:
-      print(f"リアクションロールパネルの読み込みに失敗しました: {e}")
-  return {}
-
-def save_role_panels():
-  try:
-    with open(ROLE_PANELS_FILE, "w", encoding="utf-8") as f:
-      json.dump(REACTION_ROLES, f, ensure_ascii=False, indent=2)
-  except Exception as e:
-    print(f"リアクションロールパネルの保存に失敗しました: {e}")
-
-REACTION_ROLES = load_role_panels()
 
 # --- ウェルカムメッセージ設定の永続化管理 ---
 def load_welcome_settings():
@@ -251,7 +230,6 @@ async def exportconfig(interaction: discord.Interaction):
   export_data = {
       "notification_channel_id": NOTIFICATION_CHANNEL_ID,
       "custom_responses": {str(k): v for k, v in CUSTOM_RESPONSES.items()},
-      "reaction_roles": {str(k): v for k, v in REACTION_ROLES.items()},
       "welcome_settings": {str(k): v for k, v in WELCOME_SETTINGS.items()},
       "leave_guild_id": LEAVE_GUILD_ID,
       "leave_channel_id": LEAVE_CHANNEL_ID,
@@ -275,7 +253,7 @@ async def exportconfig(interaction: discord.Interaction):
 @app_commands.default_permissions(administrator=True)
 @app_commands.describe(file="エクスポートしたJSONファイル")
 async def importconfig(interaction: discord.Interaction, file: discord.Attachment):
-  global NOTIFICATION_CHANNEL_ID, CUSTOM_RESPONSES, REACTION_ROLES, WELCOME_SETTINGS, LEAVE_GUILD_ID, LEAVE_CHANNEL_ID
+  global NOTIFICATION_CHANNEL_ID, CUSTOM_RESPONSES, WELCOME_SETTINGS, LEAVE_GUILD_ID, LEAVE_CHANNEL_ID
 
   if not file.filename.endswith(".json"):
     await interaction.response.send_message(
@@ -295,10 +273,6 @@ async def importconfig(interaction: discord.Interaction, file: discord.Attachmen
     CUSTOM_RESPONSES = {int(k): v for k, v in raw_responses.items()}
     save_custom_responses()
 
-    raw_roles = data.get("reaction_roles", {})
-    REACTION_ROLES = {int(k): v for k, v in raw_roles.items()}
-    save_role_panels()
-
     raw_welcome = data.get("welcome_settings", {})
     WELCOME_SETTINGS = {int(k): v for k, v in raw_welcome.items()}
     save_welcome_settings()
@@ -317,60 +291,52 @@ async def importconfig(interaction: discord.Interaction, file: discord.Attachmen
     )
 
 
-# --- 複数ロール一括付与パネル作成コマンド（最大10個対応・外部絵文字対応） ---
+# --- 複数ロール一括付与パネル作成コマンド（最大10個対応・絵文字のみ対応） ---
 @bot.tree.command(
     name="addrole",
-    description="【管理者用】最大10個までのロールをまとめて取得できるパネルを作成します",
+    description="【管理者用】最大10個までのロールをまとめて取得できるボタンパネル（絵文字のみ）を作成します",
 )
 @app_commands.default_permissions(administrator=True)
 @app_commands.describe(
-    method="付与方式を選択してください",
     title="埋め込みのタイトル",
     description="説明文",
-    role1="対象ロール1", label_or_emoji1="ロール1のボタン文字または絵文字",
-    role2="対象ロール2（任意）", label_or_emoji2="ロール2の文字/絵文字（任意）",
-    role3="対象ロール3（任意）", label_or_emoji3="ロール3の文字/絵文字（任意）",
-    role4="対象ロール4（任意）", label_or_emoji4="ロール4の文字/絵文字（任意）",
-    role5="対象ロール5（任意）", label_or_emoji5="ロール5の文字/絵文字（任意）",
-    role6="対象ロール6（任意）", label_or_emoji6="ロール6の文字/絵文字（任意）",
-    role7="対象ロール7（任意）", label_or_emoji7="ロール7の文字/絵文字（任意）",
-    role8="対象ロール8（任意）", label_or_emoji8="ロール8の文字/絵文字（任意）",
-    role9="対象ロール9（任意）", label_or_emoji9="ロール9の文字/絵文字（任意）",
-    role10="対象ロール10（任意）", label_or_emoji10="ロール10の文字/絵文字（任意）",
-)
-@app_commands.choices(
-    method=[
-        app_commands.Choice(name="ボタン (Button)", value="button"),
-        app_commands.Choice(name="リアクション (Reaction)", value="reaction"),
-    ]
+    role1="対象ロール1", emoji1="ロール1の絵文字",
+    role2="対象ロール2（任意）", emoji2="ロール2の絵文字（任意）",
+    role3="対象ロール3（任意）", emoji3="ロール3の絵文字（任意）",
+    role4="対象ロール4（任意）", emoji4="ロール4の絵文字（任意）",
+    role5="対象ロール5（任意）", emoji5="ロール5の絵文字（任意）",
+    role6="対象ロール6（任意）", emoji6="ロール6の絵文字（任意）",
+    role7="対象ロール7（任意）", emoji7="ロール7の絵文字（任意）",
+    role8="対象ロール8（任意）", emoji8="ロール8の絵文字（任意）",
+    role9="対象ロール9（任意）", emoji9="ロール9の絵文字（任意）",
+    role10="対象ロール10（任意）", emoji10="ロール10の絵文字（任意）",
 )
 async def addrole(
     interaction: discord.Interaction,
-    method: str,
     title: str,
     description: str,
-    role1: discord.Role, label_or_emoji1: str,
-    role2: discord.Role = None, label_or_emoji2: str = None,
-    role3: discord.Role = None, label_or_emoji3: str = None,
-    role4: discord.Role = None, label_or_emoji4: str = None,
-    role5: discord.Role = None, label_or_emoji5: str = None,
-    role6: discord.Role = None, label_or_emoji6: str = None,
-    role7: discord.Role = None, label_or_emoji7: str = None,
-    role8: discord.Role = None, label_or_emoji8: str = None,
-    role9: discord.Role = None, label_or_emoji9: str = None,
-    role10: discord.Role = None, label_or_emoji10: str = None,
+    role1: discord.Role, emoji1: str,
+    role2: discord.Role = None, emoji2: str = None,
+    role3: discord.Role = None, emoji3: str = None,
+    role4: discord.Role = None, emoji4: str = None,
+    role5: discord.Role = None, emoji5: str = None,
+    role6: discord.Role = None, emoji6: str = None,
+    role7: discord.Role = None, emoji7: str = None,
+    role8: discord.Role = None, emoji8: str = None,
+    role9: discord.Role = None, emoji9: str = None,
+    role10: discord.Role = None, emoji10: str = None,
 ):
   raw_roles = [
-      (role1, label_or_emoji1), (role2, label_or_emoji2),
-      (role3, label_or_emoji3), (role4, label_or_emoji4),
-      (role5, label_or_emoji5), (role6, label_or_emoji6),
-      (role7, label_or_emoji7), (role8, label_or_emoji8),
-      (role9, label_or_emoji9), (role10, label_or_emoji10),
+      (role1, emoji1), (role2, emoji2),
+      (role3, emoji3), (role4, emoji4),
+      (role5, emoji5), (role6, emoji6),
+      (role7, emoji7), (role8, emoji8),
+      (role9, emoji9), (role10, emoji10),
   ]
 
   roles_data = []
-  for r, label in raw_roles:
-    if r and label:
+  for r, emoji_str in raw_roles:
+    if r and emoji_str:
       if interaction.guild.me.top_role <= r:
         await interaction.response.send_message(
             f"❌ 指定されたロール（{r.name}）がボットのロールよりも上にあるため管理できません。",
@@ -379,67 +345,34 @@ async def addrole(
         return
 
       emoji_obj = None
-      button_label = label
-      custom_emoji_match = re.match(r"<(a?):([a-zA-Z0-9\_]+):(\d+)>", label)
+      custom_emoji_match = re.match(r"<(a?):([a-zA-Z0-9\_]+):(\d+)>", emoji_str.strip())
       if custom_emoji_match:
         animated, name, emoji_id = custom_emoji_match.groups()
         emoji_obj = discord.PartialEmoji(name=name, id=int(emoji_id), animated=bool(animated))
-        button_label = label.replace(custom_emoji_match.group(0), "").strip()
-        if not button_label:
-          button_label = name
+      else:
+        emoji_obj = emoji_str.strip()
 
-      roles_data.append((r, button_label, emoji_obj, label))
+      roles_data.append((r, emoji_obj))
 
   if not roles_data:
     await interaction.response.send_message(
-        "❌ 有効なロールとラベル/絵文字が設定されていません。", ephemeral=True
+        "❌ 有効なロールと絵文字が設定されていません。", ephemeral=True
     )
     return
 
   embed = discord.Embed(title=title, description=description, color=discord.Color.blue())
-
-  if method == "button":
-    view = MultiRoleButtonView(roles_data)
-    await interaction.channel.send(embed=embed, view=view)
-    await interaction.response.send_message(
-        "✅ 複数ロール一括取得の**ボタンパネル**を作成しました！", ephemeral=True
-    )
-  elif method == "reaction":
-    field_text = ""
-    reaction_dict = {}
-    for r, _, _, raw_emoji in roles_data:
-      field_text += f"{raw_emoji} : {r.mention}\n"
-      reaction_dict[str(raw_emoji)] = r.id
-
-    embed.add_field(name="付与ロール一覧", value=field_text, inline=False)
-    embed.set_footer(text="下のリアクションを押すとロールが切り替わり、自動で削除されます")
-
-    msg = await interaction.channel.send(embed=embed)
-
-    for _, _, _, raw_emoji in roles_data:
-      try:
-        match = re.match(r"<(a?):([a-zA-Z0-9\_]+):(\d+)>", raw_emoji)
-        if match:
-          _, _, emoji_id = match.groups()
-          emoji_to_add = bot.get_emoji(int(emoji_id)) or raw_emoji
-        else:
-          emoji_to_add = raw_emoji
-        await msg.add_reaction(emoji_to_add)
-      except Exception:
-        pass
-
-    REACTION_ROLES[msg.id] = reaction_dict
-    save_role_panels()
-
-    await interaction.response.send_message(
-        "✅ 複数ロール一括取得の**リアクションパネル**を作成しました！", ephemeral=True
-    )
+  view = MultiRoleButtonView(roles_data)
+  
+  await interaction.channel.send(embed=embed, view=view)
+  await interaction.response.send_message(
+      "✅ 複数ロール取得の**絵文字ボタンパネル**を作成しました！", ephemeral=True
+  )
 
 
 class MultiRoleToggleButton(discord.ui.Button):
-  def __init__(self, role_id: int, label: str, emoji: discord.PartialEmoji = None):
+  def __init__(self, role_id: int, emoji):
     super().__init__(
-        label=label if label else None,
+        label=None,  # 文字なし（絵文字のみ）
         emoji=emoji,
         style=discord.ButtonStyle.primary,
         custom_id=f"multirole_{role_id}",
@@ -473,70 +406,10 @@ class MultiRoleButtonView(discord.ui.View):
   def __init__(self, roles_data=None):
     super().__init__(timeout=None)
     if roles_data:
-      for role, label, emoji, _ in roles_data:
-        self.add_item(MultiRoleToggleButton(role.id, label, emoji))
+      for role, emoji in roles_data:
+        self.add_item(MultiRoleToggleButton(role.id, emoji))
     else:
-      self.add_item(MultiRoleToggleButton(0, "ロールを受け取る"))
-
-
-# --- リアクション追加時のロール付与（トグル式 ＆ 5秒後自動削除通知 ＆ リアクション自動削除） ---
-@bot.event
-async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
-  if payload.member and payload.member.bot:
-    return
-  if payload.message_id not in REACTION_ROLES:
-    return
-
-  guild = bot.get_guild(payload.guild_id)
-  if not guild:
-    return
-
-  emoji_key = str(payload.emoji)
-  if payload.emoji.id:
-    animated_prefix = "a" if payload.emoji.animated else ""
-    emoji_key = f"<{animated_prefix}:{payload.emoji.name}:{payload.emoji.id}>"
-
-  role_id = REACTION_ROLES[payload.message_id].get(emoji_key)
-  if not role_id:
-    for k, r_id in REACTION_ROLES[payload.message_id].items():
-      if str(payload.emoji.id) in k or payload.emoji.name in k:
-        role_id = r_id
-        break
-
-  if not role_id:
-    return
-
-  role = guild.get_role(role_id)
-  if role:
-    member = guild.get_member(payload.user_id)
-    channel = guild.get_channel(payload.channel_id)
-
-    try:
-      if role in member.roles:
-        await member.remove_roles(role)
-        notification_text = f"{member.mention} ❌ ロール「{role.name}」を解除しました。"
-      else:
-        await member.add_roles(role)
-        notification_text = f"{member.mention} 🎉 ロール「{role.name}」が付与されました！"
-
-      if channel:
-        sent_msg = await channel.send(notification_text)
-        await asyncio.sleep(5)
-        try:
-          await sent_msg.delete()
-        except Exception:
-          pass
-
-      try:
-        msg = await channel.fetch_message(payload.message_id)
-        await msg.remove_reaction(payload.emoji, member)
-      except Exception:
-        pass
-
-    except discord.Forbidden:
-      pass
-    except Exception:
-      pass
+      self.add_item(MultiRoleToggleButton(0, "✨"))
 
 
 @bot.tree.command(
@@ -1001,10 +874,11 @@ async def on_ready():
     bot.add_view(DeleteBotMessageView())
     bot.add_view(DeleteUserMessageView(0, 0))
 
-    # 再起動後もすべてのロールIDに対応する認証パネルを永続化登録するための探索
+    # 再起動後もすべてのロールIDに対応する認証パネルおよびロールボタンを永続化登録する
     for guild in bot.guilds:
       for role in guild.roles:
         bot.add_view(CaptchaPanelView(role.id))
+        bot.add_view(MultiRoleButtonView([(role, "✨")]))
 
     bot._persistent_views_added = True
 
