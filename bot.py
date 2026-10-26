@@ -249,54 +249,56 @@ async def testchannel(interaction: discord.Interaction, channel: discord.TextCha
     )
 
 
-# --- メッセージログ確認コマンド（自分だけに見える） ---
-@bot.tree.command(
-    name="messagelogs",
-    description="【管理者用】削除・編集されたメッセージの直近ログを自分だけに表示します",
-)
-@app_commands.default_permissions(administrator=True)
-@app_commands.choices(
-    log_type=[
-        app_commands.Choice(name="削除されたメッセージ (Deleted)", value="deleted"),
-        app_commands.Choice(name="編集されたメッセージ (Edited)", value="edited"),
-    ]
-)
-async def messagelogs(interaction: discord.Interaction, log_type: str):
-  if log_type == "deleted":
+# --- ログ切り替え用のビュー ---
+class LogSwitchView(discord.ui.View):
+  def __init__(self, author_id: int):
+    super().__init__(timeout=180)
+    self.author_id = author_id
+
+  @discord.ui.button(label="🗑️ 削除ログを見る", style=discord.ButtonStyle.danger, custom_id="show_deleted_log")
+  async def show_deleted(self, interaction: discord.Interaction, button: discord.ui.Button):
+    if interaction.user.id != self.author_id:
+      await interaction.response.send_message("❌ 他の人の操作です。", ephemeral=True)
+      return
+
     logs = list(deleted_message_logs)
-    title = "🗑️ 削除されたメッセージのログ (直近30件)"
-    color = discord.Color.red()
-  else:
-    logs = list(edited_message_logs)
-    title = "✏️ 編集されたメッセージのログ (直近30件)"
-    color = discord.Color.gold()
-
-  if not logs:
-    await interaction.response.send_message(
-        "ℹ️ 記録されているログはまだありません。", ephemeral=True
-    )
-    return
-
-  embed = discord.Embed(title=title, color=color)
-  for item in logs[-10:]:  # 一度に最大10件表示
-    if log_type == "deleted":
-      value = (
-          f"**ユーザー:** {item['author']} ({item['author_id']})\n"
-          f"**チャンネル:** <#{item['channel_id']}>\n"
-          f"**内容:** {item['content'] or '(添付ファイルのみ等)'}\n"
-          f"**日時:** {item['time']}"
-      )
+    embed = discord.Embed(title="🗑️ 削除されたメッセージのログ (直近10件)", color=discord.Color.red())
+    if not logs:
+      embed.description = "ℹ️ 記録されている削除ログはありません。"
     else:
-      value = (
-          f"**ユーザー:** {item['author']} ({item['author_id']})\n"
-          f"**チャンネル:** <#{item['channel_id']}>\n"
-          f"**編集前:** {item['before'] or '(なし)'}\n"
-          f"**編集後:** {item['after'] or '(なし)'}\n"
-          f"**日時:** {item['time']}"
-      )
-    embed.add_field(name=f"ID: {item['message_id']}", value=value, inline=False)
+      for item in logs[-10:]:
+        value = (
+            f"**ユーザー:** {item['author']} ({item['author_id']})\n"
+            f"**チャンネル:** <#{item['channel_id']}>\n"
+            f"**内容:** {item['content'] or '(添付ファイルのみ等)'}\n"
+            f"**日時:** {item['time']}"
+        )
+        embed.add_field(name=f"ID: {item['message_id']}", value=value, inline=False)
 
-  await interaction.response.send_message(embed=embed, ephemeral=True)
+    await interaction.response.edit_message(embed=embed, view=self)
+
+  @discord.ui.button(label="✏️ 編集ログを見る", style=discord.ButtonStyle.secondary, custom_id="show_edited_log")
+  async def show_edited(self, interaction: discord.Interaction, button: discord.ui.Button):
+    if interaction.user.id != self.author_id:
+      await interaction.response.send_message("❌ 他の人の操作です。", ephemeral=True)
+      return
+
+    logs = list(edited_message_logs)
+    embed = discord.Embed(title="✏️ 編集されたメッセージのログ (直近10件)", color=discord.Color.gold())
+    if not logs:
+      embed.description = "ℹ️ 記録されている編集ログはありません。"
+    else:
+      for item in logs[-10:]:
+        value = (
+            f"**ユーザー:** {item['author']} ({item['author_id']})\n"
+            f"**チャンネル:** <#{item['channel_id']}>\n"
+            f"**編集前:** {item['before'] or '(なし)'}\n"
+            f"**編集後:** {item['after'] or '(なし)'}\n"
+            f"**日時:** {item['time']}"
+        )
+        embed.add_field(name=f"ID: {item['message_id']}", value=value, inline=False)
+
+    await interaction.response.edit_message(embed=embed, view=self)
 
 
 # --- 設定のエクスポート（バックアップ）コマンド ---
@@ -959,7 +961,7 @@ async def on_message_edit(before: discord.Message, after: discord.Message):
   if before.author.bot:
     return
   if before.content == after.content:
-    return  # リンクの展開等で内容が変わっていない場合は無視
+    return
 
   now_str = datetime.datetime.now(JST).strftime("%m/%d %H:%M:%S")
   edited_message_logs.append({
@@ -980,7 +982,6 @@ async def on_ready():
   if not getattr(bot, "_persistent_views_added", False):
     bot.add_view(CaptchaPanelView())
     bot.add_view(MultiRoleButtonView())
-    bot.add_view(DeleteBotMessageView() if 'DeleteBotMessageView' in globals() else discord.ui.View()) # 安全対策
     bot.add_view(LinkControlView(0, 0))
 
     for guild in bot.guilds:
@@ -1090,6 +1091,42 @@ async def on_member_remove(member: discord.Member):
 @bot.event
 async def on_message(message: discord.Message):
   if message.author.bot:
+    return
+
+  # チャットに「/log」と送信されたときの処理
+  if message.content.strip() == "/log":
+    # 権限チェック（管理者以外は実行できないようにする場合）
+    if not message.author.guild_permissions.administrator:
+      await message.reply("❌ このコマンドは管理者のみ使用できます。", delete_after=5)
+      try:
+        await message.delete()
+      except Exception:
+        pass
+      return
+
+    # 自分のメッセージを即座に削除してチャットを綺麗に保つ
+    try:
+      await message.delete()
+    except Exception:
+      pass
+
+    # 初期表示として削除ログを表示
+    logs = list(deleted_message_logs)
+    embed = discord.Embed(title="🗑️ 削除されたメッセージのログ (直近10件)", color=discord.Color.red())
+    if not logs:
+      embed.description = "ℹ️ 記録されている削除ログはありません。"
+    else:
+      for item in logs[-10:]:
+        value = (
+            f"**ユーザー:** {item['author']} ({item['author_id']})\n"
+            f"**チャンネル:** <#{item['channel_id']}>\n"
+            f"**内容:** {item['content'] or '(添付ファイルのみ等)'}\n"
+            f"**日時:** {item['time']}"
+        )
+        embed.add_field(name=f"ID: {item['message_id']}", value=value, inline=False)
+
+    view = LogSwitchView(message.author.id)
+    await message.channel.send(embed=embed, view=view, delete_after=60)
     return
 
   if message.guild:
