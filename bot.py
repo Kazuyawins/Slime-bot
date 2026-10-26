@@ -954,8 +954,6 @@ class DeleteUserMessageView(discord.ui.View):
     try:
       user_msg = await interaction.channel.fetch_message(self.user_message_id)
       await user_msg.delete()
-      
-      # ボタン自体のメッセージを削除
       try:
         await interaction.message.delete()
       except Exception:
@@ -982,7 +980,6 @@ class DeleteBotMessageView(discord.ui.View):
       self, interaction: discord.Interaction, button: discord.ui.Button
   ):
     try:
-      # Botが送信したメッセージ自体を削除する
       await interaction.message.delete()
     except discord.NotFound:
       await interaction.response.send_message(
@@ -1004,12 +1001,10 @@ async def on_ready():
     bot.add_view(DeleteBotMessageView())
     bot.add_view(DeleteUserMessageView(0, 0))
 
-    for msg_id, role_dict in REACTION_ROLES.items():
-      for emoji_key, role_id in role_dict.items():
-        try:
-          bot.add_view(CaptchaPanelView(role_id))
-        except Exception:
-          pass
+    # 再起動後もすべてのロールIDに対応する認証パネルを永続化登録するための探索
+    for guild in bot.guilds:
+      for role in guild.roles:
+        bot.add_view(CaptchaPanelView(role.id))
 
     bot._persistent_views_added = True
 
@@ -1124,7 +1119,6 @@ async def on_message(message: discord.Message):
   content = message.content
   replaced = False
 
-  # YouTubeリンクのkoutube置換
   if YOUTUBE_PATTERN.search(content):
     content = content.replace("youtube.com", "koutube.com").replace(
         "youtu.be", "koutube.com"
@@ -1153,11 +1147,9 @@ async def on_message(message: discord.Message):
     replaced = True
 
   if replaced:
-    # 1. ユーザーが送った元のメッセージを消すためのパネルを返信
     user_view = DeleteUserMessageView(message.author.id, message.id)
     await message.reply("🧹 元のリンクメッセージを削除しますか？", view=user_view, delete_after=60)
 
-    # 2. Botが置換後のリンクを送信し、それを消すためのパネルを添付
     bot_view = DeleteBotMessageView()
     await message.channel.send(content, view=bot_view)
 
