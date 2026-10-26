@@ -931,36 +931,62 @@ class CaptchaModal(discord.ui.Modal, title="CAPTCHA画像認証"):
       )
 
 
-class DeleteLinkView(discord.ui.View):
-
-  def __init__(self, author_id: int, user_message_id: int, channel):
+# --- ユーザーメッセージ削除用ビュー（送信者本人のみ削除可能） ---
+class DeleteUserMessageView(discord.ui.View):
+  def __init__(self, author_id: int, user_message_id: int):
     super().__init__(timeout=None)
     self.author_id = author_id
     self.user_message_id = user_message_id
-    self.channel = channel
 
   @discord.ui.button(
-      label="リンクを消す", style=discord.ButtonStyle.danger, emoji="🗑️"
+      label="元のリンクを消す", style=discord.ButtonStyle.danger, emoji="🗑️", custom_id="delete_user_msg_btn"
   )
   async def delete_button(
       self, interaction: discord.Interaction, button: discord.ui.Button
   ):
     if interaction.user.id != self.author_id:
       await interaction.response.send_message(
-          "❌ あなたが送信したリンクではないため削除できません。",
+          "❌ あなたが送信したメッセージではないため削除できません。",
           ephemeral=True,
       )
       return
 
     try:
-      user_msg = await self.channel.fetch_message(self.user_message_id)
+      user_msg = await interaction.channel.fetch_message(self.user_message_id)
       await user_msg.delete()
-      await interaction.response.send_message(
-          "✅ リンクを削除しました。", ephemeral=True
-      )
+      
+      # ボタン自体のメッセージを削除
+      try:
+        await interaction.message.delete()
+      except Exception:
+        pass
     except discord.NotFound:
       await interaction.response.send_message(
           "ℹ️ すでに削除されているか、見つかりませんでした。", ephemeral=True
+      )
+    except Exception as e:
+      await interaction.response.send_message(
+          f"❌ 削除に失敗しました: {e}", ephemeral=True
+      )
+
+
+# --- Botの置換メッセージ削除用ビュー（誰でも押して消せる） ---
+class DeleteBotMessageView(discord.ui.View):
+  def __init__(self):
+    super().__init__(timeout=None)
+
+  @discord.ui.button(
+      label="Botのリンクを消す", style=discord.ButtonStyle.secondary, emoji="🧹", custom_id="delete_bot_msg_btn"
+  )
+  async def delete_bot_button(
+      self, interaction: discord.Interaction, button: discord.ui.Button
+  ):
+    try:
+      # Botが送信したメッセージ自体を削除する
+      await interaction.message.delete()
+    except discord.NotFound:
+      await interaction.response.send_message(
+          "ℹ️ すでに削除されています。", ephemeral=True
       )
     except Exception as e:
       await interaction.response.send_message(
@@ -973,13 +999,11 @@ async def on_ready():
   print(f"ログインしました: {bot.user} (ID: {bot.user.id})")
 
   if not getattr(bot, "_persistent_views_added", False):
-    # 汎用的なCaptchaPanelViewを登録
     bot.add_view(CaptchaPanelView())
-    
-    # リアクションロールのボタン用ビューも登録
     bot.add_view(MultiRoleButtonView())
+    bot.add_view(DeleteBotMessageView())
+    bot.add_view(DeleteUserMessageView(0, 0))
 
-    # 過去に送信されたリアクションロールパネルなどのメッセージIDから、各ロールIDを抽出して動的に永続化ビューを登録する
     for msg_id, role_dict in REACTION_ROLES.items():
       for emoji_key, role_id in role_dict.items():
         try:
@@ -1100,6 +1124,7 @@ async def on_message(message: discord.Message):
   content = message.content
   replaced = False
 
+  # YouTubeリンクのkoutube置換
   if YOUTUBE_PATTERN.search(content):
     content = content.replace("youtube.com", "koutube.com").replace(
         "youtu.be", "koutube.com"
@@ -1128,9 +1153,13 @@ async def on_message(message: discord.Message):
     replaced = True
 
   if replaced:
-    response_text = content
-    view = DeleteLinkView(message.author.id, message.id, message.channel)
-    await message.channel.send(response_text, view=view)
+    # 1. ユーザーが送った元のメッセージを消すためのパネルを返信
+    user_view = DeleteUserMessageView(message.author.id, message.id)
+    await message.reply("🧹 元のリンクメッセージを削除しますか？", view=user_view, delete_after=60)
+
+    # 2. Botが置換後のリンクを送信し、それを消すためのパネルを添付
+    bot_view = DeleteBotMessageView()
+    await message.channel.send(content, view=bot_view)
 
 
 async def main():
