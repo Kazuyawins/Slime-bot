@@ -287,7 +287,6 @@ async def importconfig(interaction: discord.Interaction, file: discord.Attachmen
     file_bytes = await file.read()
     data = json.loads(file_bytes.decode("utf-8"))
 
-    # データの反映と保存
     NOTIFICATION_CHANNEL_ID = data.get("notification_channel_id")
     if NOTIFICATION_CHANNEL_ID:
       save_notification_channel_id(NOTIFICATION_CHANNEL_ID)
@@ -520,7 +519,6 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
         await member.add_roles(role)
         notification_text = f"{member.mention} 🎉 ロール「{role.name}」が付与されました！"
 
-      # 全員に見える公開メッセージとして送信し、5秒後に自動削除
       if channel:
         sent_msg = await channel.send(notification_text)
         await asyncio.sleep(5)
@@ -529,7 +527,6 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
         except Exception:
           pass
 
-      # 押されたリアクションを即座に削除する
       try:
         msg = await channel.fetch_message(payload.message_id)
         await msg.remove_reaction(payload.emoji, member)
@@ -976,8 +973,20 @@ async def on_ready():
   print(f"ログインしました: {bot.user} (ID: {bot.user.id})")
 
   if not getattr(bot, "_persistent_views_added", False):
+    # 汎用的なCaptchaPanelViewを登録
     bot.add_view(CaptchaPanelView())
+    
+    # リアクションロールのボタン用ビューも登録
     bot.add_view(MultiRoleButtonView())
+
+    # 過去に送信されたリアクションロールパネルなどのメッセージIDから、各ロールIDを抽出して動的に永続化ビューを登録する
+    for msg_id, role_dict in REACTION_ROLES.items():
+      for emoji_key, role_id in role_dict.items():
+        try:
+          bot.add_view(CaptchaPanelView(role_id))
+        except Exception:
+          pass
+
     bot._persistent_views_added = True
 
   try:
