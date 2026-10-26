@@ -301,6 +301,31 @@ class LogSwitchView(discord.ui.View):
     await interaction.response.edit_message(embed=embed, view=self)
 
 
+# --- メッセージログ確認のアプリコマンド ---
+@bot.tree.command(
+    name="log",
+    description="【管理者用】削除・編集されたメッセージのログを表示します",
+)
+@app_commands.default_permissions(administrator=True)
+async def log_command(interaction: discord.Interaction):
+  logs = list(deleted_message_logs)
+  embed = discord.Embed(title="🗑️ 削除されたメッセージのログ (直近10件)", color=discord.Color.red())
+  if not logs:
+    embed.description = "ℹ️ 記録されている削除ログはありません。"
+  else:
+    for item in logs[-10:]:
+      value = (
+          f"**ユーザー:** {item['author']} ({item['author_id']})\n"
+          f"**チャンネル:** <#{item['channel_id']}>\n"
+          f"**内容:** {item['content'] or '(添付ファイルのみ等)'}\n"
+          f"**日時:** {item['time']}"
+      )
+      embed.add_field(name=f"ID: {item['message_id']}", value=value, inline=False)
+
+  view = LogSwitchView(interaction.user.id)
+  await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+
 # --- 設定のエクスポート（バックアップ）コマンド ---
 @bot.tree.command(
     name="exportconfig",
@@ -899,7 +924,6 @@ class LinkControlView(discord.ui.View):
       self, interaction: discord.Interaction, button: discord.ui.Button
   ):
     try:
-      # Botのメッセージ（パネル）自体を「編集済み」にしてボタンを削除する
       await interaction.message.edit(content=interaction.message.content + "\n*(Botのリンクを削除しました)*", view=None)
       await interaction.response.defer()
     except discord.NotFound:
@@ -925,7 +949,6 @@ class LinkControlView(discord.ui.View):
       return
 
     try:
-      # ユーザーの元のメッセージを削除
       user_msg = await interaction.channel.fetch_message(self.user_message_id)
       await user_msg.delete()
     except discord.NotFound:
@@ -934,7 +957,6 @@ class LinkControlView(discord.ui.View):
       print(f"ユーザーメッセージの削除に失敗しました: {e}")
 
     try:
-      # Botのパネル側は削除せず、ボタンを無くして「編集済み」風にする
       await interaction.message.edit(content=interaction.message.content + "\n*(元のリンクを削除しました)*", view=None)
       await interaction.response.defer()
     except discord.NotFound:
@@ -1095,38 +1117,6 @@ async def on_member_remove(member: discord.Member):
 @bot.event
 async def on_message(message: discord.Message):
   if message.author.bot:
-    return
-
-  if message.content.strip() == "/log":
-    if not message.author.guild_permissions.administrator:
-      await message.reply("❌ このコマンドは管理者のみ使用できます。", delete_after=5)
-      try:
-        await message.delete()
-      except Exception:
-        pass
-      return
-
-    try:
-      await message.delete()
-    except Exception:
-      pass
-
-    logs = list(deleted_message_logs)
-    embed = discord.Embed(title="🗑️ 削除されたメッセージのログ (直近10件)", color=discord.Color.red())
-    if not logs:
-      embed.description = "ℹ️ 記録されている削除ログはありません。"
-    else:
-      for item in logs[-10:]:
-        value = (
-            f"**ユーザー:** {item['author']} ({item['author_id']})\n"
-            f"**チャンネル:** <#{item['channel_id']}>\n"
-            f"**内容:** {item['content'] or '(添付ファイルのみ等)'}\n"
-            f"**日時:** {item['time']}"
-        )
-        embed.add_field(name=f"ID: {item['message_id']}", value=value, inline=False)
-
-    view = LogSwitchView(message.author.id)
-    await message.channel.send(embed=embed, view=view, delete_after=60)
     return
 
   if message.guild:
