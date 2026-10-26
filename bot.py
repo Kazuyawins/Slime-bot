@@ -923,20 +923,21 @@ class LinkControlView(discord.ui.View):
       return
 
     try:
+      # ユーザーの元のメッセージを削除
       user_msg = await interaction.channel.fetch_message(self.user_message_id)
       await user_msg.delete()
-      try:
-        await interaction.message.delete()
-      except Exception:
-        pass
     except discord.NotFound:
-      await interaction.response.send_message(
-          "ℹ️ すでに削除されているか、見つかりませんでした。", ephemeral=True
-      )
+      pass
     except Exception as e:
-      await interaction.response.send_message(
-          f"❌ 削除に失敗しました: {e}", ephemeral=True
-      )
+      print(f"ユーザーメッセージの削除に失敗しました: {e}")
+
+    try:
+      # Botが送信したパネル（メッセージ）も一緒に削除
+      await interaction.message.delete()
+    except discord.NotFound:
+      pass
+    except Exception as e:
+      print(f"パネルの削除に失敗しました: {e}")
 
 
 # --- メッセージ削除・編集のイベントハンドラー ---
@@ -1093,9 +1094,7 @@ async def on_message(message: discord.Message):
   if message.author.bot:
     return
 
-  # チャットに「/log」と送信されたときの処理
   if message.content.strip() == "/log":
-    # 権限チェック（管理者以外は実行できないようにする場合）
     if not message.author.guild_permissions.administrator:
       await message.reply("❌ このコマンドは管理者のみ使用できます。", delete_after=5)
       try:
@@ -1104,13 +1103,11 @@ async def on_message(message: discord.Message):
         pass
       return
 
-    # 自分のメッセージを即座に削除してチャットを綺麗に保つ
     try:
       await message.delete()
     except Exception:
       pass
 
-    # 初期表示として削除ログを表示
     logs = list(deleted_message_logs)
     embed = discord.Embed(title="🗑️ 削除されたメッセージのログ (直近10件)", color=discord.Color.red())
     if not logs:
