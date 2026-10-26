@@ -367,7 +367,7 @@ class MultiRoleButtonView(discord.ui.View):
       self.add_item(MultiRoleToggleButton(0, "ロールを受け取る"))
 
 
-# --- リアクション追加時のロール付与（トグル式 ＆ リアクション自動削除） ---
+# --- リアクション追加時のロール付与（トグル式 ＆ みんなに見える通知 ＆ リアクション自動削除） ---
 @bot.event
 async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
   if payload.member and payload.member.bot:
@@ -402,9 +402,16 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
     try:
       if role in member.roles:
         await member.remove_roles(role)
+        notification_text = f"{member.mention} ❌ ロール「{role.name}」を解除しました。"
       else:
         await member.add_roles(role)
+        notification_text = f"{member.mention} 🎉 ロール「{role.name}」が付与されました！"
 
+      # みんなに見える通常メッセージとして送信
+      if channel:
+        await channel.send(notification_text)
+
+      # 押されたリアクションを即座に削除する
       try:
         msg = await channel.fetch_message(payload.message_id)
         await msg.remove_reaction(payload.emoji, member)
@@ -848,7 +855,6 @@ async def on_ready():
   print(f"ログインしました: {bot.user} (ID: {bot.user.id})")
 
   if not getattr(bot, "_persistent_views_added", False):
-    # 認証パネルとロール付与パネルの両方を永続ビューとして登録
     bot.add_view(CaptchaPanelView())
     bot.add_view(MultiRoleButtonView())
     bot._persistent_views_added = True
