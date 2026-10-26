@@ -113,6 +113,10 @@ def save_leave_settings(guild_id, channel_id):
 
 LEAVE_GUILD_ID, LEAVE_CHANNEL_ID = load_leave_settings()
 
+# --- メッセージログのメモリ管理（直近30件を保持） ---
+deleted_message_logs = deque(maxlen=30)
+edited_message_logs = deque(maxlen=30)
+
 JST = ZoneInfo("Asia/Tokyo")
 
 YOUTUBE_PATTERN = re.compile(
@@ -243,6 +247,56 @@ async def testchannel(interaction: discord.Interaction, channel: discord.TextCha
         f"❌ 送信に失敗しました（ボットに権限がない可能性があります）: {e}",
         ephemeral=True,
     )
+
+
+# --- メッセージログ確認コマンド（自分だけに見える） ---
+@bot.tree.command(
+    name="messagelogs",
+    description="【管理者用】削除・編集されたメッセージの直近ログを自分だけに表示します",
+)
+@app_commands.default_permissions(administrator=True)
+@app_commands.choices(
+    log_type=[
+        app_commands.Choice(name="削除されたメッセージ (Deleted)", value="deleted"),
+        app_commands.Choice(name="編集されたメッセージ (Edited)", value="edited"),
+    ]
+)
+async def messagelogs(interaction: discord.Interaction, log_type: str):
+  if log_type == "deleted":
+    logs = list(deleted_message_logs)
+    title = "🗑️ 削除されたメッセージのログ (直近30件)"
+    color = discord.Color.red()
+  else:
+    logs = list(edited_message_logs)
+    title = "✏️ 編集されたメッセージのログ (直近30件)"
+    color = discord.Color.gold()
+
+  if not logs:
+    await interaction.response.send_message(
+        "ℹ️ 記録されているログはまだありません。", ephemeral=True
+    )
+    return
+
+  embed = discord.Embed(title=title, color=color)
+  for item in logs[-10:]:  # 一度に最大10件表示
+    if log_type == "deleted":
+      value = (
+          f"**ユーザー:** {item['author']} ({item['author_id']})\n"
+          f"**チャンネル:** <#{item['channel_id']}>\n"
+          f"**内容:** {item['content'] or '(添付ファイルのみ等)'}\n"
+          f"**日時:** {item['time']}"
+      )
+    else:
+      value = (
+          f"**ユーザー:** {item['author']} ({item['author_id']})\n"
+          f"**チャンネル:** <#{item['channel_id']}>\n"
+          f"**編集前:** {item['before'] or '(なし)'}\n"
+          f"**編集後:** {item['after'] or '(なし)'}\n"
+          f"**日時:** {item['time']}"
+      )
+    embed.add_field(name=f"ID: {item['message_id']}", value=value, inline=False)
+
+  await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 # --- 設定のエクスポート（バックアップ）コマンド ---
@@ -829,14 +883,13 @@ class CaptchaModal(discord.ui.Modal, title="CAPTCHA画像認証"):
       )
 
 
-# --- リンク削除用の統合ビュー（Botのリンクを消す ＆ 元のリンクを消すボタンを1つに統合） ---
+# --- リンク削除用の統合ビュー ---
 class LinkControlView(discord.ui.View):
   def __init__(self, author_id: int, user_message_id: int):
     super().__init__(timeout=None)
     self.author_id = author_id
     self.user_message_id = user_message_id
 
-  # 1. Botが送信した置換メッセージを消すボタン（誰でも押せる）
   @discord.ui.button(
       label="Botのリンクを消す", style=discord.ButtonStyle.secondary, emoji="🧹", custom_id="delete_bot_msg_btn"
   )
@@ -854,7 +907,6 @@ class LinkControlView(discord.ui.View):
           f"❌ 削除に失敗しました: {e}", ephemeral=True
       )
 
-  # 2. ユーザーが送信した元のメッセージを消すボタン（送信者本人のみ削除可能）
   @discord.ui.button(
       label="元のリンクを消す", style=discord.ButtonStyle.danger, emoji="🗑️", custom_id="delete_user_msg_btn"
   )
@@ -871,8 +923,6 @@ class LinkControlView(discord.ui.View):
     try:
       user_msg = await interaction.channel.fetch_message(self.user_message_id)
       await user_msg.delete()
-      
-      # ついでにBotのメッセージ（ボタンパネル）も一緒に削除する
       try:
         await interaction.message.delete()
       except Exception:
@@ -887,6 +937,42 @@ class LinkControlView(discord.ui.View):
       )
 
 
+# --- メッセージ削除・編集のイベントハンドラー ---
+@bot.event
+async def on_message_delete(message: discord.Message):
+  if message.author.bot:
+    return
+  
+  now_str = datetime.datetime.now(JST).strftime("%m/%d %H:%M:%S")
+  deleted_message_logs.append({
+      "message_id": message.id,
+      "author": str(message.author),
+      "author_id": message.author.id,
+      "channel_id": message.channel.id,
+      "content": message.content,
+      "time": now_str
+  })
+
+
+@bot.event
+async def on_message_edit(before: discord.Message, after: discord.Message):
+  if before.author.bot:
+    return
+  if before.content == after.content:
+    return  # リンクの展開等で内容が変わっていない場合は無視
+
+  now_str = datetime.datetime.now(JST).strftime("%m/%d %H:%M:%S")
+  edited_message_logs.append({
+      "message_id": before.id,
+      "author": str(before.author),
+      "author_id": before.author.id,
+      "channel_id": before.channel.id,
+      "before": before.content,
+      "after": after.content,
+      "time": now_str
+  })
+
+
 @bot.event
 async def on_ready():
   print(f"ログインしました: {bot.user} (ID: {bot.user.id})")
@@ -894,6 +980,7 @@ async def on_ready():
   if not getattr(bot, "_persistent_views_added", False):
     bot.add_view(CaptchaPanelView())
     bot.add_view(MultiRoleButtonView())
+    bot.add_view(DeleteBotMessageView() if 'DeleteBotMessageView' in globals() else discord.ui.View()) # 安全対策
     bot.add_view(LinkControlView(0, 0))
 
     for guild in bot.guilds:
@@ -1042,7 +1129,6 @@ async def on_message(message: discord.Message):
     replaced = True
 
   if replaced:
-    # Botが置換後のリンクを送信し、その下に「Botのリンクを消す」＆「元のリンクを消す」ボタンを両方配置する
     view = LinkControlView(message.author.id, message.id)
     await message.channel.send(content, view=view)
 
