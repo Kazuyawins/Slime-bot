@@ -210,11 +210,11 @@ async def setchannel(interaction: discord.Interaction):
 
 
 @bot.tree.command(
-    name="logset",
+    name="setlog",
     description="【管理者用】各種ログ（メッセージ・チャンネル・スレッド）を送信するチャンネルを設定します",
 )
 @app_commands.default_permissions(manage_channels=True)
-async def logset(interaction: discord.Interaction):
+async def setlog(interaction: discord.Interaction):
   global LOG_CHANNEL_ID, LOG_ENABLED
   LOG_CHANNEL_ID = interaction.channel.id
   save_log_settings(LOG_CHANNEL_ID, LOG_ENABLED)
@@ -946,7 +946,7 @@ class LinkControlView(discord.ui.View):
       print(f"パネルの編集に失敗しました: {e}")
 
 
-# --- メッセージ・チャンネル・スレッドのログ通知イベントハンドラー（有効時のみ送信） ---
+# --- メッセージ・チャンネル・スレッドのログ通知イベントハンドラー（画像のようなフォーマット） ---
 @bot.event
 async def on_message_delete(message: discord.Message):
   if message.author.bot:
@@ -961,15 +961,14 @@ async def on_message_delete(message: discord.Message):
 
   content_text = message.content if message.content else "(テキストなし・添付ファイル等)"
   embed = discord.Embed(
-      title="🗑️ メッセージが削除されました",
       description=(
-          f"**送信者:** {message.author} ({message.author.id})\n"
-          f"**チャンネル:** <#{message.channel.id}>\n"
-          f"**内容:**\n{content_text}"
+          f"🗑️ **{message.author}** が送信したメッセージが <#{message.channel.id}> で削除されました。\n"
+          f"Author: **{message.author}** {content_text}"
       ),
       color=discord.Color.red(),
       timestamp=datetime.datetime.now(JST)
   )
+  embed.set_footer(text=f"{bot.user.name} / {message.guild.name}")
   try:
     await target_channel.send(embed=embed)
   except Exception as e:
@@ -994,16 +993,16 @@ async def on_message_edit(before: discord.Message, after: discord.Message):
   after_text = after.content if after.content else "(なし)"
 
   embed = discord.Embed(
-      title="✏️ メッセージが編集されました",
       description=(
-          f"**送信者:** {before.author} ({before.author.id})\n"
-          f"**チャンネル:** <#{before.channel.id}>\n"
-          f"**編集前:**\n{before_text}\n\n"
-          f"**編集後:**\n{after_text}"
+          f"✏️ **{before.author}** が送信したメッセージが <#{before.channel.id}> で編集されました。\n"
+          f"Author: **{before.author}**\n"
+          f"**編集前:** {before_text}\n"
+          f"**編集後:** {after_text}"
       ),
       color=discord.Color.gold(),
       timestamp=datetime.datetime.now(JST)
   )
+  embed.set_footer(text=f"{bot.user.name} / {before.guild.name}")
   try:
     await target_channel.send(embed=embed)
   except Exception as e:
@@ -1020,8 +1019,7 @@ async def on_guild_channel_create(channel: discord.abc.GuildChannel):
     return
 
   embed = discord.Embed(
-      title="📁 チャンネルが作成されました",
-      description=f"**チャンネル名:** {channel.name}\n**種類:** {channel.type}\n**ID:** {channel.id}",
+      description=f"📁 チャンネル **{channel.name}** ({channel.type}) が作成されました。",
       color=discord.Color.green(),
       timestamp=datetime.datetime.now(JST)
   )
@@ -1041,8 +1039,7 @@ async def on_guild_channel_delete(channel: discord.abc.GuildChannel):
     return
 
   embed = discord.Embed(
-      title="🗑️ チャンネルが削除されました",
-      description=f"**チャンネル名:** {channel.name}\n**種類:** {channel.type}\n**ID:** {channel.id}",
+      description=f"🗑️ チャンネル **{channel.name}** ({channel.type}) が削除されました。",
       color=discord.Color.red(),
       timestamp=datetime.datetime.now(JST)
   )
@@ -1062,8 +1059,7 @@ async def on_thread_create(thread: discord.Thread):
     return
 
   embed = discord.Embed(
-      title="🧵 スレッドが作成されました",
-      description=f"**スレッド名:** {thread.name}\n**親チャンネル:** <#{thread.parent_id}>\n**ID:** {thread.id}",
+      description=f"🧵 スレッド **{thread.name}** が作成されました (親: <#{thread.parent_id}>)。",
       color=discord.Color.blurple(),
       timestamp=datetime.datetime.now(JST)
   )
@@ -1083,8 +1079,7 @@ async def on_thread_delete(thread: discord.Thread):
     return
 
   embed = discord.Embed(
-      title="🗑️ スレッドが削除されました",
-      description=f"**スレッド名:** {thread.name}\n**親チャンネル:** <#{thread.parent_id}>\n**ID:** {thread.id}",
+      description=f"🗑️ スレッド **{thread.name}** が削除されました。",
       color=discord.Color.dark_red(),
       timestamp=datetime.datetime.now(JST)
   )
