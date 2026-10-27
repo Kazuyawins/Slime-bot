@@ -946,7 +946,7 @@ class LinkControlView(discord.ui.View):
       print(f"パネルの編集に失敗しました: {e}")
 
 
-# --- メッセージ・チャンネル・スレッドのログ通知イベントハンドラー（画像のようなフォーマット） ---
+# --- メッセージ・チャンネル・スレッドのログ通知イベントハンドラー（メンション形式に変更） ---
 @bot.event
 async def on_message_delete(message: discord.Message):
   if message.author.bot:
@@ -962,8 +962,8 @@ async def on_message_delete(message: discord.Message):
   content_text = message.content if message.content else "(テキストなし・添付ファイル等)"
   embed = discord.Embed(
       description=(
-          f"🗑️ **{message.author}** が送信したメッセージが <#{message.channel.id}> で削除されました。\n"
-          f"Author: **{message.author}** {content_text}"
+          f"🗑️ {message.author.mention} が送信したメッセージが <#{message.channel.id}> で削除されました。\n"
+          f"Author: {message.author.mention} {content_text}"
       ),
       color=discord.Color.red(),
       timestamp=datetime.datetime.now(JST)
@@ -994,8 +994,8 @@ async def on_message_edit(before: discord.Message, after: discord.Message):
 
   embed = discord.Embed(
       description=(
-          f"✏️ **{before.author}** が送信したメッセージが <#{before.channel.id}> で編集されました。\n"
-          f"Author: **{before.author}**\n"
+          f"✏️ {before.author.mention} が送信したメッセージが <#{before.channel.id}> で編集されました。\n"
+          f"Author: {before.author.mention}\n"
           f"**編集前:** {before_text}\n"
           f"**編集後:** {after_text}"
       ),
