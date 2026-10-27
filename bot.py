@@ -55,25 +55,30 @@ def save_notification_channel_id(channel_id):
 
 NOTIFICATION_CHANNEL_ID = load_notification_channel_id()
 
-# --- ログ通知チャンネル & オン・オフ設定の永続化管理 ---
+# --- ログ通知チャンネル & オン・オフ設定の永続化管理（サーバーごと） ---
 def load_log_settings():
   if os.path.exists(LOG_CONFIG_FILE):
     try:
       with open(LOG_CONFIG_FILE, "r", encoding="utf-8") as f:
         data = json.load(f)
-        return data.get("channel_id"), data.get("enabled", True)
+        # サーバーごとの辞書形式に対応（旧形式の数値データも考慮）
+        if isinstance(data, dict) and "guilds" in data:
+          return {int(k): {"channel_id": v["channel_id"], "enabled": v.get("enabled", True)} for k, v in data["guilds"].items()}
+        elif isinstance(data, dict) and not any(isinstance(v, dict) for v in data.values()):
+          # 古い単一データ形式の場合のフォールバック
+          pass
     except Exception as e:
       print(f"ログ設定の読み込みに失敗しました: {e}")
-  return None, True
+  return {}
 
-def save_log_settings(channel_id, enabled):
+def save_log_settings():
   try:
     with open(LOG_CONFIG_FILE, "w", encoding="utf-8") as f:
-      json.dump({"channel_id": channel_id, "enabled": enabled}, f, ensure_ascii=False, indent=2)
+      json.dump({"guilds": {str(k): v for k, v in LOG_SETTINGS.items()}}, f, ensure_ascii=False, indent=2)
   except Exception as e:
     print(f"ログ設定の保存に失敗しました: {e}")
 
-LOG_CHANNEL_ID, LOG_ENABLED = load_log_settings()
+LOG_SETTINGS = load_log_settings()
 
 # --- カスタム返信（完全一致）の永続化管理 ---
 def load_custom_responses():
@@ -215,27 +220,34 @@ async def setchannel(interaction: discord.Interaction):
 )
 @app_commands.default_permissions(manage_channels=True)
 async def setlog(interaction: discord.Interaction):
-  global LOG_CHANNEL_ID, LOG_ENABLED
-  LOG_CHANNEL_ID = interaction.channel.id
-  save_log_settings(LOG_CHANNEL_ID, LOG_ENABLED)
+  guild_id = interaction.guild.id
+  if guild_id not in LOG_SETTINGS:
+    LOG_SETTINGS[guild_id] = {"channel_id": interaction.channel.id, "enabled": True}
+  else:
+    LOG_SETTINGS[guild_id]["channel_id"] = interaction.channel.id
+  save_log_settings()
 
   await interaction.response.send_message(
-      f"✅ このチャンネル（{interaction.channel.mention}）をログ通知の送信先として設定し、保存しました！",
+      f"✅ このチャンネル（{interaction.channel.mention}）をこのサーバーのログ通知先として設定し、保存しました！",
       ephemeral=True,
   )
 
 
 @bot.tree.command(
     name="logtoggle",
-    description="【管理者用】ログ通知機能のオン（有効）／オフ（無効）を切り替えます",
+    description="【管理者用】このサーバーのログ通知機能のオン（有効）／オフ（無効）を切り替えます",
 )
 @app_commands.default_permissions(manage_channels=True)
 async def logtoggle(interaction: discord.Interaction):
-  global LOG_CHANNEL_ID, LOG_ENABLED
-  LOG_ENABLED = not LOG_ENABLED
-  save_log_settings(LOG_CHANNEL_ID, LOG_ENABLED)
+  guild_id = interaction.guild.id
+  if guild_id not in LOG_SETTINGS:
+    LOG_SETTINGS[guild_id] = {"channel_id": interaction.channel.id, "enabled": True}
+  else:
+    LOG_SETTINGS[guild_id]["enabled"] = not LOG_SETTINGS[guild_id].get("enabled", True)
+  save_log_settings()
 
-  status_str = "🟢 有効 (オン)" if LOG_ENABLED else "🔴 無効 (オフ)"
+  current_status = LOG_SETTINGS[guild_id]["enabled"]
+  status_str = "🟢 有効 (オン)" if current_status else "🔴 無効 (オフ)"
   await interaction.response.send_message(
       f"✅ ログ通知機能を切り替えました。\n現在の状態: **{status_str}**",
       ephemeral=True,
@@ -309,8 +321,7 @@ async def testchannel(interaction: discord.Interaction, channel: discord.TextCha
 async def exportconfig(interaction: discord.Interaction):
   export_data = {
       "notification_channel_id": NOTIFICATION_CHANNEL_ID,
-      "log_channel_id": LOG_CHANNEL_ID,
-      "log_enabled": LOG_ENABLED,
+      "log_settings": {str(k): v for k, v in LOG_SETTINGS.items()},
       "custom_responses": {str(k): v for k, v in CUSTOM_RESPONSES.items()},
       "welcome_settings": {str(k): v for k, v in WELCOME_SETTINGS.items()},
       "leave_guild_id": LEAVE_GUILD_ID,
@@ -335,7 +346,7 @@ async def exportconfig(interaction: discord.Interaction):
 @app_commands.default_permissions(administrator=True)
 @app_commands.describe(file="エクスポートしたJSONファイル")
 async def importconfig(interaction: discord.Interaction, file: discord.Attachment):
-  global NOTIFICATION_CHANNEL_ID, LOG_CHANNEL_ID, LOG_ENABLED, CUSTOM_RESPONSES, WELCOME_SETTINGS, LEAVE_GUILD_ID, LEAVE_CHANNEL_ID
+  global NOTIFICATION_CHANNEL_ID, LOG_SETTINGS, CUSTOM_RESPONSES, WELCOME_SETTINGS, LEAVE_GUILD_ID, LEAVE_CHANNEL_ID
 
   if not file.filename.endswith(".json"):
     await interaction.response.send_message(
@@ -351,10 +362,9 @@ async def importconfig(interaction: discord.Interaction, file: discord.Attachmen
     if NOTIFICATION_CHANNEL_ID:
       save_notification_channel_id(NOTIFICATION_CHANNEL_ID)
 
-    LOG_CHANNEL_ID = data.get("log_channel_id")
-    LOG_ENABLED = data.get("log_enabled", True)
-    if LOG_CHANNEL_ID:
-      save_log_settings(LOG_CHANNEL_ID, LOG_ENABLED)
+    raw_log = data.get("log_settings", {})
+    LOG_SETTINGS = {int(k): v for k, v in raw_log.items()}
+    save_log_settings()
 
     raw_responses = data.get("custom_responses", {})
     CUSTOM_RESPONSES = {int(k): v for k, v in raw_responses.items()}
@@ -946,16 +956,26 @@ class LinkControlView(discord.ui.View):
       print(f"パネルの編集に失敗しました: {e}")
 
 
-# --- メッセージ・チャンネル・スレッドのログ通知イベントハンドラー（メンション形式に変更） ---
+# --- サーバーごとのログ送信判定ヘルパー ---
+def get_guild_log_channel(guild_id: int):
+  if not guild_id or guild_id not in LOG_SETTINGS:
+    return None
+  settings = LOG_SETTINGS[guild_id]
+  if not settings.get("enabled", True):
+    return None
+  return settings.get("channel_id")
+
+
+# --- メッセージ・チャンネル・スレッドのログ通知イベントハンドラー（サーバーごとに独立） ---
 @bot.event
 async def on_message_delete(message: discord.Message):
-  if message.author.bot:
+  if message.author.bot or not message.guild:
     return
   
-  global LOG_CHANNEL_ID, LOG_ENABLED
-  if not LOG_ENABLED or LOG_CHANNEL_ID is None:
+  channel_id = get_guild_log_channel(message.guild.id)
+  if channel_id is None:
     return
-  target_channel = bot.get_channel(LOG_CHANNEL_ID)
+  target_channel = bot.get_channel(channel_id)
   if target_channel is None:
     return
 
@@ -977,15 +997,15 @@ async def on_message_delete(message: discord.Message):
 
 @bot.event
 async def on_message_edit(before: discord.Message, after: discord.Message):
-  if before.author.bot:
+  if before.author.bot or not before.guild:
     return
   if before.content == after.content:
     return
   
-  global LOG_CHANNEL_ID, LOG_ENABLED
-  if not LOG_ENABLED or LOG_CHANNEL_ID is None:
+  channel_id = get_guild_log_channel(before.guild.id)
+  if channel_id is None:
     return
-  target_channel = bot.get_channel(LOG_CHANNEL_ID)
+  target_channel = bot.get_channel(channel_id)
   if target_channel is None:
     return
 
@@ -1011,10 +1031,12 @@ async def on_message_edit(before: discord.Message, after: discord.Message):
 
 @bot.event
 async def on_guild_channel_create(channel: discord.abc.GuildChannel):
-  global LOG_CHANNEL_ID, LOG_ENABLED
-  if not LOG_ENABLED or LOG_CHANNEL_ID is None:
+  if not channel.guild:
     return
-  target_channel = bot.get_channel(LOG_CHANNEL_ID)
+  channel_id = get_guild_log_channel(channel.guild.id)
+  if channel_id is None:
+    return
+  target_channel = bot.get_channel(channel_id)
   if target_channel is None:
     return
 
@@ -1031,10 +1053,12 @@ async def on_guild_channel_create(channel: discord.abc.GuildChannel):
 
 @bot.event
 async def on_guild_channel_delete(channel: discord.abc.GuildChannel):
-  global LOG_CHANNEL_ID, LOG_ENABLED
-  if not LOG_ENABLED or LOG_CHANNEL_ID is None:
+  if not channel.guild:
     return
-  target_channel = bot.get_channel(LOG_CHANNEL_ID)
+  channel_id = get_guild_log_channel(channel.guild.id)
+  if channel_id is None:
+    return
+  target_channel = bot.get_channel(channel_id)
   if target_channel is None:
     return
 
@@ -1051,10 +1075,12 @@ async def on_guild_channel_delete(channel: discord.abc.GuildChannel):
 
 @bot.event
 async def on_thread_create(thread: discord.Thread):
-  global LOG_CHANNEL_ID, LOG_ENABLED
-  if not LOG_ENABLED or LOG_CHANNEL_ID is None:
+  if not thread.guild:
     return
-  target_channel = bot.get_channel(LOG_CHANNEL_ID)
+  channel_id = get_guild_log_channel(thread.guild.id)
+  if channel_id is None:
+    return
+  target_channel = bot.get_channel(channel_id)
   if target_channel is None:
     return
 
@@ -1071,10 +1097,12 @@ async def on_thread_create(thread: discord.Thread):
 
 @bot.event
 async def on_thread_delete(thread: discord.Thread):
-  global LOG_CHANNEL_ID, LOG_ENABLED
-  if not LOG_ENABLED or LOG_CHANNEL_ID is None:
+  if not thread.guild:
     return
-  target_channel = bot.get_channel(LOG_CHANNEL_ID)
+  channel_id = get_guild_log_channel(thread.guild.id)
+  if channel_id is None:
+    return
+  target_channel = bot.get_channel(channel_id)
   if target_channel is None:
     return
 
