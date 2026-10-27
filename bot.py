@@ -583,34 +583,41 @@ async def history(interaction: discord.Interaction):
 
 @bot.tree.command(
     name="setwelcome",
-    description="【管理者用】このサーバーのウェルカムメッセージを設定します",
+    description="【管理者用】このサーバーのウェルカムメッセージを設定します（通常テキストまたは埋め込み対応）",
 )
 @app_commands.default_permissions(manage_channels=True)
 @app_commands.describe(
     enabled="ウェルカムメッセージを有効にするか (True: オン, False: オフ)",
+    use_embed="埋め込み（Embed）形式にするか (True: 埋め込み, False: 通常テキスト)",
     mention="メンバーをメンションするか (True: あり, False: なし)",
-    text="送信する本文（例: サーバーへようこそ！）",
+    title="埋め込みの場合のタイトル（通常テキスト時は無視されます）",
+    text="送信する本文（例: {member.name}さん、{guild.name}へようこそ！）",
 )
 async def setwelcome(
-    interaction: discord.Interaction, enabled: bool, mention: bool, text: str
+    interaction: discord.Interaction, enabled: bool, use_embed: bool, mention: bool, text: str, title: str = "👋 ようこそ！"
 ):
   guild_id = interaction.guild.id
   WELCOME_SETTINGS[guild_id] = {
       "channel_id": interaction.channel.id,
       "enabled": enabled,
+      "use_embed": use_embed,
       "mention": mention,
+      "title": title,
       "text": text,
   }
   save_welcome_settings()
 
   status_str = "🟢 有効 (オン)" if enabled else "🔴 無効 (オフ)"
+  type_str = "📦 埋め込み (Embed)" if use_embed else "💬 通常テキスト"
   mention_str = "あり" if mention else "なし"
 
   await interaction.response.send_message(
       f"✅ このサーバーのウェルカムメッセージ設定を保存しました！\n"
       f"・**状態:** {status_str}\n"
+      f"・**形式:** {type_str}\n"
       f"・**送信チャンネル:** {interaction.channel.mention}\n"
       f"・**メンション:** {mention_str}\n"
+      f"・**タイトル:** {title}\n"
       f"・**本文:** {text}",
       ephemeral=True,
   )
@@ -897,7 +904,7 @@ class CaptchaModal(discord.ui.Modal, title="CAPTCHA画像認証"):
       )
 
 
-# --- リンク削除用の統合ビュー（「元のリンクを消す」ではユーザーメッセージのみ削除） ---
+# --- リンク削除用の統合ビュー（元のリンクのみ消す場合はBotメッセージを残すように修正） ---
 class LinkControlView(discord.ui.View):
   def __init__(self, author_id: int, user_message_id: int):
     super().__init__(timeout=None)
@@ -940,7 +947,7 @@ class LinkControlView(discord.ui.View):
       return
 
     try:
-      # ユーザーが送信した元のメッセージだけを削除する（Botのメッセージは残す）
+      # ユーザーが送信した元のメッセージだけを削除する（Botメッセージは残す）
       user_msg = await interaction.channel.fetch_message(self.user_message_id)
       await user_msg.delete()
       await interaction.response.defer()
@@ -1165,13 +1172,23 @@ async def on_member_join(member: discord.Member):
 
   text = settings.get("text", "")
   formatted_text = text.replace("{guild.name}", member.guild.name).replace("{member.name}", member.name)
+  use_embed = settings.get("use_embed", False)
+  title = settings.get("title", "👋 ようこそ！")
+  mention = settings.get("mention", True)
 
-  if settings.get("mention", True):
-    final_message = f"{member.mention} {formatted_text}"
+  if use_embed:
+    embed = discord.Embed(title=title, description=formatted_text, color=discord.Color.blue())
+    if member.avatar:
+      embed.set_thumbnail(url=member.avatar.url)
+    
+    content = member.mention if mention else None
+    await channel.send(content=content, embed=embed)
   else:
-    final_message = formatted_text
-
-  await channel.send(final_message)
+    if mention:
+      final_message = f"{member.mention} {formatted_text}"
+    else:
+      final_message = formatted_text
+    await channel.send(final_message)
 
 
 @bot.event
