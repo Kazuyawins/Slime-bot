@@ -19,11 +19,13 @@ intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
 intents.reactions = True
+intents.guilds = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # --- 設定の永続化ファイル管理 ---
 CONFIG_FILE = "channel_config.txt"
+LOG_CONFIG_FILE = "log_channel_config.txt"
 RESPONSES_FILE = "custom_responses.txt"
 WELCOME_FILE = "welcome_settings.txt"
 LEAVE_CONFIG_FILE = "leave_config.txt"
@@ -52,6 +54,26 @@ def save_notification_channel_id(channel_id):
     print(f"チャンネル設定の保存に失敗しました: {e}")
 
 NOTIFICATION_CHANNEL_ID = load_notification_channel_id()
+
+# --- ログ通知チャンネル & オン・オフ設定の永続化管理 ---
+def load_log_settings():
+  if os.path.exists(LOG_CONFIG_FILE):
+    try:
+      with open(LOG_CONFIG_FILE, "r", encoding="utf-8") as f:
+        data = json.load(f)
+        return data.get("channel_id"), data.get("enabled", True)
+    except Exception as e:
+      print(f"ログ設定の読み込みに失敗しました: {e}")
+  return None, True
+
+def save_log_settings(channel_id, enabled):
+  try:
+    with open(LOG_CONFIG_FILE, "w", encoding="utf-8") as f:
+      json.dump({"channel_id": channel_id, "enabled": enabled}, f, ensure_ascii=False, indent=2)
+  except Exception as e:
+    print(f"ログ設定の保存に失敗しました: {e}")
+
+LOG_CHANNEL_ID, LOG_ENABLED = load_log_settings()
 
 # --- カスタム返信（完全一致）の永続化管理 ---
 def load_custom_responses():
@@ -112,10 +134,6 @@ def save_leave_settings(guild_id, channel_id):
     print(f"退出通知設定の保存に失敗しました: {e}")
 
 LEAVE_GUILD_ID, LEAVE_CHANNEL_ID = load_leave_settings()
-
-# --- メッセージログのメモリ管理（直近30件を保持） ---
-deleted_message_logs = deque(maxlen=30)
-edited_message_logs = deque(maxlen=30)
 
 JST = ZoneInfo("Asia/Tokyo")
 
@@ -192,6 +210,39 @@ async def setchannel(interaction: discord.Interaction):
 
 
 @bot.tree.command(
+    name="logset",
+    description="【管理者用】各種ログ（メッセージ・チャンネル・スレッド）を送信するチャンネルを設定します",
+)
+@app_commands.default_permissions(manage_channels=True)
+async def logset(interaction: discord.Interaction):
+  global LOG_CHANNEL_ID, LOG_ENABLED
+  LOG_CHANNEL_ID = interaction.channel.id
+  save_log_settings(LOG_CHANNEL_ID, LOG_ENABLED)
+
+  await interaction.response.send_message(
+      f"✅ このチャンネル（{interaction.channel.mention}）をログ通知の送信先として設定し、保存しました！",
+      ephemeral=True,
+  )
+
+
+@bot.tree.command(
+    name="logtoggle",
+    description="【管理者用】ログ通知機能のオン（有効）／オフ（無効）を切り替えます",
+)
+@app_commands.default_permissions(manage_channels=True)
+async def logtoggle(interaction: discord.Interaction):
+  global LOG_CHANNEL_ID, LOG_ENABLED
+  LOG_ENABLED = not LOG_ENABLED
+  save_log_settings(LOG_CHANNEL_ID, LOG_ENABLED)
+
+  status_str = "🟢 有効 (オン)" if LOG_ENABLED else "🔴 無効 (オフ)"
+  await interaction.response.send_message(
+      f"✅ ログ通知機能を切り替えました。\n現在の状態: **{status_str}**",
+      ephemeral=True,
+  )
+
+
+@bot.tree.command(
     name="test",
     description="【管理者用】日付お知らせのテスト送信と認証パネルの動作テストを行います",
 )
@@ -249,83 +300,6 @@ async def testchannel(interaction: discord.Interaction, channel: discord.TextCha
     )
 
 
-# --- ログ切り替え用のビュー ---
-class LogSwitchView(discord.ui.View):
-  def __init__(self, author_id: int):
-    super().__init__(timeout=180)
-    self.author_id = author_id
-
-  @discord.ui.button(label="🗑️ 削除ログを見る", style=discord.ButtonStyle.danger, custom_id="show_deleted_log")
-  async def show_deleted(self, interaction: discord.Interaction, button: discord.ui.Button):
-    if interaction.user.id != self.author_id:
-      await interaction.response.send_message("❌ 他の人の操作です。", ephemeral=True)
-      return
-
-    logs = list(deleted_message_logs)
-    embed = discord.Embed(title="🗑️ 削除されたメッセージのログ (直近10件)", color=discord.Color.red())
-    if not logs:
-      embed.description = "ℹ️ 記録されている削除ログはありません。"
-    else:
-      for item in logs[-10:]:
-        value = (
-            f"**ユーザー:** {item['author']} ({item['author_id']})\n"
-            f"**チャンネル:** <#{item['channel_id']}>\n"
-            f"**内容:** {item['content'] or '(添付ファイルのみ等)'}\n"
-            f"**日時:** {item['time']}"
-        )
-        embed.add_field(name=f"ID: {item['message_id']}", value=value, inline=False)
-
-    await interaction.response.edit_message(embed=embed, view=self)
-
-  @discord.ui.button(label="✏️ 編集ログを見る", style=discord.ButtonStyle.secondary, custom_id="show_edited_log")
-  async def show_edited(self, interaction: discord.Interaction, button: discord.ui.Button):
-    if interaction.user.id != self.author_id:
-      await interaction.response.send_message("❌ 他の人の操作です。", ephemeral=True)
-      return
-
-    logs = list(edited_message_logs)
-    embed = discord.Embed(title="✏️ 編集されたメッセージのログ (直近10件)", color=discord.Color.gold())
-    if not logs:
-      embed.description = "ℹ️ 記録されている編集ログはありません。"
-    else:
-      for item in logs[-10:]:
-        value = (
-            f"**ユーザー:** {item['author']} ({item['author_id']})\n"
-            f"**チャンネル:** <#{item['channel_id']}>\n"
-            f"**編集前:** {item['before'] or '(なし)'}\n"
-            f"**編集後:** {item['after'] or '(なし)'}\n"
-            f"**日時:** {item['time']}"
-        )
-        embed.add_field(name=f"ID: {item['message_id']}", value=value, inline=False)
-
-    await interaction.response.edit_message(embed=embed, view=self)
-
-
-# --- メッセージログ確認のアプリコマンド ---
-@bot.tree.command(
-    name="log",
-    description="【管理者用】削除・編集されたメッセージのログを表示します",
-)
-@app_commands.default_permissions(administrator=True)
-async def log_command(interaction: discord.Interaction):
-  logs = list(deleted_message_logs)
-  embed = discord.Embed(title="🗑️ 削除されたメッセージのログ (直近10件)", color=discord.Color.red())
-  if not logs:
-    embed.description = "ℹ️ 記録されている削除ログはありません。"
-  else:
-    for item in logs[-10:]:
-      value = (
-          f"**ユーザー:** {item['author']} ({item['author_id']})\n"
-          f"**チャンネル:** <#{item['channel_id']}>\n"
-          f"**内容:** {item['content'] or '(添付ファイルのみ等)'}\n"
-          f"**日時:** {item['time']}"
-      )
-      embed.add_field(name=f"ID: {item['message_id']}", value=value, inline=False)
-
-  view = LogSwitchView(interaction.user.id)
-  await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
-
-
 # --- 設定のエクスポート（バックアップ）コマンド ---
 @bot.tree.command(
     name="exportconfig",
@@ -335,6 +309,8 @@ async def log_command(interaction: discord.Interaction):
 async def exportconfig(interaction: discord.Interaction):
   export_data = {
       "notification_channel_id": NOTIFICATION_CHANNEL_ID,
+      "log_channel_id": LOG_CHANNEL_ID,
+      "log_enabled": LOG_ENABLED,
       "custom_responses": {str(k): v for k, v in CUSTOM_RESPONSES.items()},
       "welcome_settings": {str(k): v for k, v in WELCOME_SETTINGS.items()},
       "leave_guild_id": LEAVE_GUILD_ID,
@@ -359,7 +335,7 @@ async def exportconfig(interaction: discord.Interaction):
 @app_commands.default_permissions(administrator=True)
 @app_commands.describe(file="エクスポートしたJSONファイル")
 async def importconfig(interaction: discord.Interaction, file: discord.Attachment):
-  global NOTIFICATION_CHANNEL_ID, CUSTOM_RESPONSES, WELCOME_SETTINGS, LEAVE_GUILD_ID, LEAVE_CHANNEL_ID
+  global NOTIFICATION_CHANNEL_ID, LOG_CHANNEL_ID, LOG_ENABLED, CUSTOM_RESPONSES, WELCOME_SETTINGS, LEAVE_GUILD_ID, LEAVE_CHANNEL_ID
 
   if not file.filename.endswith(".json"):
     await interaction.response.send_message(
@@ -374,6 +350,11 @@ async def importconfig(interaction: discord.Interaction, file: discord.Attachmen
     NOTIFICATION_CHANNEL_ID = data.get("notification_channel_id")
     if NOTIFICATION_CHANNEL_ID:
       save_notification_channel_id(NOTIFICATION_CHANNEL_ID)
+
+    LOG_CHANNEL_ID = data.get("log_channel_id")
+    LOG_ENABLED = data.get("log_enabled", True)
+    if LOG_CHANNEL_ID:
+      save_log_settings(LOG_CHANNEL_ID, LOG_ENABLED)
 
     raw_responses = data.get("custom_responses", {})
     CUSTOM_RESPONSES = {int(k): v for k, v in raw_responses.items()}
@@ -965,21 +946,34 @@ class LinkControlView(discord.ui.View):
       print(f"パネルの編集に失敗しました: {e}")
 
 
-# --- メッセージ削除・編集のイベントハンドラー ---
+# --- メッセージ・チャンネル・スレッドのログ通知イベントハンドラー（有効時のみ送信） ---
 @bot.event
 async def on_message_delete(message: discord.Message):
   if message.author.bot:
     return
   
-  now_str = datetime.datetime.now(JST).strftime("%m/%d %H:%M:%S")
-  deleted_message_logs.append({
-      "message_id": message.id,
-      "author": str(message.author),
-      "author_id": message.author.id,
-      "channel_id": message.channel.id,
-      "content": message.content,
-      "time": now_str
-  })
+  global LOG_CHANNEL_ID, LOG_ENABLED
+  if not LOG_ENABLED or LOG_CHANNEL_ID is None:
+    return
+  target_channel = bot.get_channel(LOG_CHANNEL_ID)
+  if target_channel is None:
+    return
+
+  content_text = message.content if message.content else "(テキストなし・添付ファイル等)"
+  embed = discord.Embed(
+      title="🗑️ メッセージが削除されました",
+      description=(
+          f"**送信者:** {message.author} ({message.author.id})\n"
+          f"**チャンネル:** <#{message.channel.id}>\n"
+          f"**内容:**\n{content_text}"
+      ),
+      color=discord.Color.red(),
+      timestamp=datetime.datetime.now(JST)
+  )
+  try:
+    await target_channel.send(embed=embed)
+  except Exception as e:
+    print(f"メッセージ削除通知の送信に失敗しました: {e}")
 
 
 @bot.event
@@ -988,17 +982,116 @@ async def on_message_edit(before: discord.Message, after: discord.Message):
     return
   if before.content == after.content:
     return
+  
+  global LOG_CHANNEL_ID, LOG_ENABLED
+  if not LOG_ENABLED or LOG_CHANNEL_ID is None:
+    return
+  target_channel = bot.get_channel(LOG_CHANNEL_ID)
+  if target_channel is None:
+    return
 
-  now_str = datetime.datetime.now(JST).strftime("%m/%d %H:%M:%S")
-  edited_message_logs.append({
-      "message_id": before.id,
-      "author": str(before.author),
-      "author_id": before.author.id,
-      "channel_id": before.channel.id,
-      "before": before.content,
-      "after": after.content,
-      "time": now_str
-  })
+  before_text = before.content if before.content else "(なし)"
+  after_text = after.content if after.content else "(なし)"
+
+  embed = discord.Embed(
+      title="✏️ メッセージが編集されました",
+      description=(
+          f"**送信者:** {before.author} ({before.author.id})\n"
+          f"**チャンネル:** <#{before.channel.id}>\n"
+          f"**編集前:**\n{before_text}\n\n"
+          f"**編集後:**\n{after_text}"
+      ),
+      color=discord.Color.gold(),
+      timestamp=datetime.datetime.now(JST)
+  )
+  try:
+    await target_channel.send(embed=embed)
+  except Exception as e:
+    print(f"メッセージ編集通知の送信に失敗しました: {e}")
+
+
+@bot.event
+async def on_guild_channel_create(channel: discord.abc.GuildChannel):
+  global LOG_CHANNEL_ID, LOG_ENABLED
+  if not LOG_ENABLED or LOG_CHANNEL_ID is None:
+    return
+  target_channel = bot.get_channel(LOG_CHANNEL_ID)
+  if target_channel is None:
+    return
+
+  embed = discord.Embed(
+      title="📁 チャンネルが作成されました",
+      description=f"**チャンネル名:** {channel.name}\n**種類:** {channel.type}\n**ID:** {channel.id}",
+      color=discord.Color.green(),
+      timestamp=datetime.datetime.now(JST)
+  )
+  try:
+    await target_channel.send(embed=embed)
+  except Exception as e:
+    print(f"チャンネル作成通知の送信に失敗しました: {e}")
+
+
+@bot.event
+async def on_guild_channel_delete(channel: discord.abc.GuildChannel):
+  global LOG_CHANNEL_ID, LOG_ENABLED
+  if not LOG_ENABLED or LOG_CHANNEL_ID is None:
+    return
+  target_channel = bot.get_channel(LOG_CHANNEL_ID)
+  if target_channel is None:
+    return
+
+  embed = discord.Embed(
+      title="🗑️ チャンネルが削除されました",
+      description=f"**チャンネル名:** {channel.name}\n**種類:** {channel.type}\n**ID:** {channel.id}",
+      color=discord.Color.red(),
+      timestamp=datetime.datetime.now(JST)
+  )
+  try:
+    await target_channel.send(embed=embed)
+  except Exception as e:
+    print(f"チャンネル削除通知の送信に失敗しました: {e}")
+
+
+@bot.event
+async def on_thread_create(thread: discord.Thread):
+  global LOG_CHANNEL_ID, LOG_ENABLED
+  if not LOG_ENABLED or LOG_CHANNEL_ID is None:
+    return
+  target_channel = bot.get_channel(LOG_CHANNEL_ID)
+  if target_channel is None:
+    return
+
+  embed = discord.Embed(
+      title="🧵 スレッドが作成されました",
+      description=f"**スレッド名:** {thread.name}\n**親チャンネル:** <#{thread.parent_id}>\n**ID:** {thread.id}",
+      color=discord.Color.blurple(),
+      timestamp=datetime.datetime.now(JST)
+  )
+  try:
+    await target_channel.send(embed=embed)
+  except Exception as e:
+    print(f"スレッド作成通知の送信に失敗しました: {e}")
+
+
+@bot.event
+async def on_thread_delete(thread: discord.Thread):
+  global LOG_CHANNEL_ID, LOG_ENABLED
+  if not LOG_ENABLED or LOG_CHANNEL_ID is None:
+    return
+  target_channel = bot.get_channel(LOG_CHANNEL_ID)
+  if target_channel is None:
+    return
+
+  embed = discord.Embed(
+      title="🗑️ スレッドが削除されました",
+      description=f"**スレッド名:** {thread.name}\n**親チャンネル:** <#{thread.parent_id}>\n**ID:** {thread.id}",
+      color=discord.Color.dark_red(),
+      timestamp=datetime.datetime.now(JST)
+  )
+  try:
+    await target_channel.send(embed=embed)
+  except Exception as e:
+    print(f"スレッド削除通知の送信に失敗しました: {e}")
 
 
 @bot.event
