@@ -897,7 +897,7 @@ class CaptchaModal(discord.ui.Modal, title="CAPTCHA画像認証"):
       )
 
 
-# --- リンク削除用の統合ビュー（送信者本人のみ操作可能に制限） ---
+# --- リンク削除用の統合ビュー（「元のリンクを消す」ではユーザーメッセージのみ削除） ---
 class LinkControlView(discord.ui.View):
   def __init__(self, author_id: int, user_message_id: int):
     super().__init__(timeout=None)
@@ -940,19 +940,18 @@ class LinkControlView(discord.ui.View):
       return
 
     try:
+      # ユーザーが送信した元のメッセージだけを削除する（Botのメッセージは残す）
       user_msg = await interaction.channel.fetch_message(self.user_message_id)
       await user_msg.delete()
+      await interaction.response.defer()
     except discord.NotFound:
-      pass
+      await interaction.response.send_message(
+          "ℹ️ 元のメッセージはすでに削除されています。", ephemeral=True
+      )
     except Exception as e:
-      print(f"ユーザーメッセージの削除に失敗しました: {e}")
-
-    try:
-      await interaction.message.delete()
-    except discord.NotFound:
-      pass
-    except Exception as e:
-      print(f"Botメッセージの削除に失敗しました: {e}")
+      await interaction.response.send_message(
+          f"❌ ユーザーメッセージの削除に失敗しました: {e}", ephemeral=True
+      )
 
 
 # --- サーバーごとのログ送信判定ヘルパー ---
