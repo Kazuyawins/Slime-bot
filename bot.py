@@ -61,12 +61,8 @@ def load_log_settings():
     try:
       with open(LOG_CONFIG_FILE, "r", encoding="utf-8") as f:
         data = json.load(f)
-        # サーバーごとの辞書形式に対応（旧形式の数値データも考慮）
         if isinstance(data, dict) and "guilds" in data:
           return {int(k): {"channel_id": v["channel_id"], "enabled": v.get("enabled", True)} for k, v in data["guilds"].items()}
-        elif isinstance(data, dict) and not any(isinstance(v, dict) for v in data.values()):
-          # 古い単一データ形式の場合のフォールバック
-          pass
     except Exception as e:
       print(f"ログ設定の読み込みに失敗しました: {e}")
   return {}
@@ -901,7 +897,7 @@ class CaptchaModal(discord.ui.Modal, title="CAPTCHA画像認証"):
       )
 
 
-# --- リンク削除用の統合ビュー ---
+# --- リンク削除用の統合ビュー（修正済み） ---
 class LinkControlView(discord.ui.View):
   def __init__(self, author_id: int, user_message_id: int):
     super().__init__(timeout=None)
@@ -915,7 +911,8 @@ class LinkControlView(discord.ui.View):
       self, interaction: discord.Interaction, button: discord.ui.Button
   ):
     try:
-      await interaction.message.edit(content=interaction.message.content + "\n*(Botのリンクを削除しました)*", view=None)
+      # ボットメッセージの本文を空にしてボタンも消去する
+      await interaction.message.edit(content="*(Botのリンクを削除しました)*", view=None)
       await interaction.response.defer()
     except discord.NotFound:
       await interaction.response.send_message(
@@ -948,7 +945,7 @@ class LinkControlView(discord.ui.View):
       print(f"ユーザーメッセージの削除に失敗しました: {e}")
 
     try:
-      await interaction.message.edit(content=interaction.message.content + "\n*(元のリンクを削除しました)*", view=None)
+      await interaction.message.edit(content="*(元のリンクを削除しました)*", view=None)
       await interaction.response.defer()
     except discord.NotFound:
       pass
