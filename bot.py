@@ -897,7 +897,7 @@ class CaptchaModal(discord.ui.Modal, title="CAPTCHA画像認証"):
       )
 
 
-# --- リンク削除用の統合ビュー（修正済み） ---
+# --- リンク削除用の統合ビュー（送信者本人のみ操作可能に制限） ---
 class LinkControlView(discord.ui.View):
   def __init__(self, author_id: int, user_message_id: int):
     super().__init__(timeout=None)
@@ -910,14 +910,17 @@ class LinkControlView(discord.ui.View):
   async def delete_bot_button(
       self, interaction: discord.Interaction, button: discord.ui.Button
   ):
-    try:
-      # ボットメッセージの本文を空にしてボタンも消去する
-      await interaction.message.edit(content="*(Botのリンクを削除しました)*", view=None)
-      await interaction.response.defer()
-    except discord.NotFound:
+    if interaction.user.id != self.author_id:
       await interaction.response.send_message(
-          "ℹ️ すでに削除されています。", ephemeral=True
+          "❌ あなたが送信したリンクではないため操作できません。",
+          ephemeral=True,
       )
+      return
+
+    try:
+      await interaction.message.delete()
+    except discord.NotFound:
+      pass
     except Exception as e:
       await interaction.response.send_message(
           f"❌ 削除に失敗しました: {e}", ephemeral=True
@@ -931,7 +934,7 @@ class LinkControlView(discord.ui.View):
   ):
     if interaction.user.id != self.author_id:
       await interaction.response.send_message(
-          "❌ あなたが送信したメッセージではないため削除できません。",
+          "❌ あなたが送信したリンクではないため操作できません。",
           ephemeral=True,
       )
       return
@@ -945,12 +948,11 @@ class LinkControlView(discord.ui.View):
       print(f"ユーザーメッセージの削除に失敗しました: {e}")
 
     try:
-      await interaction.message.edit(content="*(元のリンクを削除しました)*", view=None)
-      await interaction.response.defer()
+      await interaction.message.delete()
     except discord.NotFound:
       pass
     except Exception as e:
-      print(f"パネルの編集に失敗しました: {e}")
+      print(f"Botメッセージの削除に失敗しました: {e}")
 
 
 # --- サーバーごとのログ送信判定ヘルパー ---
