@@ -248,7 +248,7 @@ def get_help_embed(lang="ja"):
             "• `/setchannel` - Set the current channel for daily date notifications.\n"
             "• `/setlog` - Set the logging channel for messages, channels, and threads.\n"
             "• `/logtoggle` - Toggle the logging feature ON/OFF.\n"
-            "• `/spamsetting` - Configure anti-spam protection (timeout, kick, ban).\n"
+            "• `/spamsetting` - Configure anti-spam protection (custom timeout duration, kick, ban).\n"
             "• `/setwelcome` - Configure welcome messages (Text or Embed format).\n"
             "• `/setleave` - Set the channel for member leave duration logs.\n"
             "• `/addrole` - Create multi-role emoji button panels (up to 10 roles).\n"
@@ -299,7 +299,7 @@ def get_help_embed(lang="ja"):
             "• `/setchannel` - 日付が変わった際のお知らせチャンネルを設定\n"
             "• `/setlog` - 各種ログ（メッセージ・チャンネル・スレッド）の通知先を設定\n"
             "• `/logtoggle` - ログ通知機能の有効／無効を切り替え\n"
-            "• `/spamsetting` - スパム対策（自動タイムアウト・キック・BAN）を設定\n"
+            "• `/spamsetting` - スパム対策（任意のタイムアウト時間・キック・BAN）を設定\n"
             "• `/setwelcome` - ウェルカムメッセージを設定（テキスト・埋め込み対応）\n"
             "• `/setleave` - メンバー退出時の滞在時間記録チャンネルを設定\n"
             "• `/addrole` - 最大10個の絵文字ロール取得パネルを作成\n"
@@ -404,7 +404,7 @@ async def logtoggle(interaction: discord.Interaction):
   )
 
 
-# --- スパム設定コマンド ---
+# --- スパム設定コマンド（任意の数値 ＋ 秒/分/時間/日 単位選択に対応） ---
 @bot.tree.command(
     name="spamsetting",
     description="【管理者用】スパム対策（自動タイムアウト・キック・BAN）を設定します"
@@ -415,7 +415,8 @@ async def logtoggle(interaction: discord.Interaction):
     seconds="何秒間の間に制限するか（例: 5）",
     count="何件メッセージを送ったら制限するか（例: 5）",
     action="処分方法 (timeout: タイムアウト, kick: キック, ban: BAN)",
-    timeout_duration="タイムアウトさせる秒数（actionがtimeoutの時のみ有効、例: 300）",
+    timeout_value="タイムアウトさせる任意の数値（任意・例: 10）",
+    timeout_unit="タイムアウトの単位（任意・秒/分/時間/日）",
     warn_message="検知時にユーザーへ送信する警告メッセージ（任意）",
 )
 @app_commands.choices(
@@ -423,6 +424,12 @@ async def logtoggle(interaction: discord.Interaction):
         app_commands.Choice(name="タイムアウト (timeout)", value="timeout"),
         app_commands.Choice(name="キック (kick)", value="kick"),
         app_commands.Choice(name="BAN (ban)", value="ban"),
+    ],
+    timeout_unit=[
+        app_commands.Choice(name="秒 (seconds)", value="seconds"),
+        app_commands.Choice(name="分 (minutes)", value="minutes"),
+        app_commands.Choice(name="時間 (hours)", value="hours"),
+        app_commands.Choice(name="日 (days)", value="days"),
     ]
 )
 async def spamsetting(
@@ -431,16 +438,35 @@ async def spamsetting(
     seconds: int,
     count: int,
     action: str,
-    timeout_duration: int = 300,
+    timeout_value: int = 5,
+    timeout_unit: str = "minutes",
     warn_message: str = "スパム行為が検知されたため制限されました。",
 ):
   guild_id = interaction.guild.id
+
+  # 単位を秒数に自動計算
+  if timeout_unit == "seconds":
+    timeout_seconds = timeout_value
+    unit_str = f"{timeout_value}秒"
+  elif timeout_unit == "minutes":
+    timeout_seconds = timeout_value * 60
+    unit_str = f"{timeout_value}分"
+  elif timeout_unit == "hours":
+    timeout_seconds = timeout_value * 3600
+    unit_str = f"{timeout_value}時間"
+  elif timeout_unit == "days":
+    timeout_seconds = timeout_value * 86400
+    unit_str = f"{timeout_value}日"
+  else:
+    timeout_seconds = timeout_value * 60
+    unit_str = f"{timeout_value}分"
+
   SPAM_SETTINGS[guild_id] = {
       "enabled": enabled,
       "seconds": seconds,
       "count": count,
       "action": action,
-      "timeout_duration": timeout_duration,
+      "timeout_duration": timeout_seconds,
       "warn_message": warn_message,
   }
   save_spam_settings()
@@ -450,7 +476,7 @@ async def spamsetting(
       f"✅ スパム設定を保存しました！\n"
       f"・**状態:** {status_str}\n"
       f"・**制限:** {seconds}秒間に {count}件\n"
-      f"・**処分方法:** {action}（タイムアウト時間: {timeout_duration}秒）\n"
+      f"・**処分方法:** {action}（タイムアウト時間: **{unit_str}**）\n"
       f"・**警告メッセージ:** {warn_message}",
       ephemeral=True,
   )
