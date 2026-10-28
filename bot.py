@@ -162,18 +162,17 @@ user_message_history = defaultdict(lambda: defaultdict(deque))
 
 JST = ZoneInfo("Asia/Tokyo")
 
-YOUTUBE_PATTERN = re.compile(
-    r"https?://(?:www\.)?(?:youtube\.com/watch\?v=([\w-]+)|youtu\.be/([\w-]+))(\S*)"
-)
-X_PATTERN = re.compile(
-    r"https?://(?:www\.)?(?:twitter\.com|x\.com)/([a-zA-Z0-9_]+/status/\d+)(\S*)"
-)
-INSTAGRAM_PATTERN = re.compile(
-    r"https?://(?:www\.)?instagram\.com/(p|reel|tv|stories)/[\w-]+(\S*)"
-)
+# 各種SNSリンク判定用パターン
+YOUTUBE_PATTERN = re.compile(r"https?://(?:www\.)?(?:youtube\.com/watch\?v=([\w-]+)|youtu\.be/([\w-]+))(\S*)")
+X_PATTERN = re.compile(r"https?://(?:www\.)?(?:twitter\.com|x\.com)/([a-zA-Z0-9_]+/status/\d+)(\S*)")
+INSTAGRAM_PATTERN = re.compile(r"https?://(?:www\.)?instagram\.com/(p|reel|tv|stories)/[\w-]+(\S*)")
 TIKTOK_PATTERN = re.compile(r"https?://(?:www\.|vm\.|vt\.)?tiktok\.com/\S+")
 FACEBOOK_PATTERN = re.compile(r"https?://(?:www\.)?(?:facebook\.com|fb\.watch)/\S+")
 THREADS_PATTERN = re.compile(r"https?://(?:www\.)?threads\.net/\S+")
+REDDIT_PATTERN = re.compile(r"https?://(?:www\.)?(?:reddit\.com|redd\.it)/\S+")
+PIXIV_PATTERN = re.compile(r"https?://(?:www\.)?pixiv\.net/\S+")
+BLUESKY_PATTERN = re.compile(r"https?://(?:www\.)?bsky\.app/\S+")
+NICO_PATTERN = re.compile(r"https?://(?:www\.)?nicovideo\.jp/\S+")
 
 
 async def handle_ping(request):
@@ -228,7 +227,19 @@ def get_help_embed(lang="ja"):
     )
     embed.add_field(
         name="🔗 Link Transformation",
-        value="Automatically converts social media links (YouTube, X/Twitter, Instagram, TikTok, Facebook, Threads) for better preview. Includes a control panel to delete links (only for the message author).",
+        value=(
+            "Automatically transforms social media links for optimal preview embeds in Discord:\n"
+            "• **YouTube** → `koutube.com`\n"
+            "• **X / Twitter** → `fxtwitter.com`\n"
+            "• **Instagram** → `oginstagram.com`\n"
+            "• **TikTok** → `tnktok.com`\n"
+            "• **Facebook** → `facebed.com`\n"
+            "• **Threads** → `fixthreads.com`\n"
+            "• **Reddit** → `fxreddit.seria.moe`\n"
+            "• **Pixiv** → `phixiv.net`\n"
+            "• **Bluesky** → `bskx.app`\n"
+            "• **Niconico** → `nicovideo.gay`"
+        ),
         inline=False
     )
     embed.add_field(
@@ -267,7 +278,19 @@ def get_help_embed(lang="ja"):
     )
     embed.add_field(
         name="🔗 SNSリンク自動変換",
-        value="YouTube、X（Twitter）、Instagram、TikTok、Facebook、Threadsのリンクを送信すると、見やすいビューに自動変換します。送信者本人のみ操作できる削除パネル付きです。",
+        value=(
+            "SNSのリンクを送信すると、埋め込みプレビューが見やすいURLへ自動変換されます：\n"
+            "• **YouTube** → `koutube.com`\n"
+            "• **X (Twitter)** → `fxtwitter.com`\n"
+            "• **Instagram** → `oginstagram.com`\n"
+            "• **TikTok** → `tnktok.com`\n"
+            "• **Facebook** → `facebed.com`\n"
+            "• **Threads** → `fixthreads.com`\n"
+            "• **Reddit** → `fxreddit.seria.moe`\n"
+            "• **Pixiv** → `phixiv.net`\n"
+            "• **Bluesky** → `bskx.app`\n"
+            "• **ニコニコ動画** → `nicovideo.gay`"
+        ),
         inline=False
     )
     embed.add_field(
@@ -1529,7 +1552,6 @@ async def on_message(message: discord.Message):
     if guild_id in SPAM_SETTINGS:
       spam_conf = SPAM_SETTINGS[guild_id]
       if spam_conf.get("enabled", False):
-        # 管理者はスパム対象外にする場合 (必要に応じて)
         if not message.author.guild_permissions.administrator:
           limit_seconds = spam_conf.get("seconds", 5)
           limit_count = spam_conf.get("count", 5)
@@ -1540,7 +1562,6 @@ async def on_message(message: discord.Message):
           now_ts = datetime.datetime.now(JST).timestamp()
           history = user_message_history[guild_id][message.author.id]
 
-          # 古い履歴を削除
           while history and history[0] < now_ts - limit_seconds:
             history.popleft()
 
@@ -1560,7 +1581,6 @@ async def on_message(message: discord.Message):
             except Exception as e:
               print(f"スパム処分の実行に失敗しました: {e}")
 
-            # 履歴をクリア
             history.clear()
             return
 
@@ -1572,31 +1592,36 @@ async def on_message(message: discord.Message):
   content = message.content
   replaced = False
 
+  # 各種リンクの自動変換処理
   if YOUTUBE_PATTERN.search(content):
-    content = content.replace("youtube.com", "koutube.com").replace(
-        "youtu.be", "koutube.com"
-    )
+    content = content.replace("youtube.com", "koutube.com").replace("youtu.be", "koutube.com")
     replaced = True
   if X_PATTERN.search(content):
-    content = content.replace("twitter.com", "fxtwitter.com").replace(
-        "x.com", "fxtwitter.com"
-    )
+    content = content.replace("twitter.com", "fxtwitter.com").replace("x.com", "fxtwitter.com")
     replaced = True
   if INSTAGRAM_PATTERN.search(content):
     content = content.replace("instagram.com", "oginstagram.com")
     replaced = True
   if TIKTOK_PATTERN.search(content):
-    content = re.sub(
-        r"https?://(?:www\.|vm\.|vt\.)?tiktok\.com",
-        "https://tnktok.com",
-        content,
-    )
+    content = re.sub(r"https?://(?:www\.|vm\.|vt\.)?tiktok\.com", "https://tnktok.com", content)
     replaced = True
   if FACEBOOK_PATTERN.search(content):
     content = content.replace("facebook.com", "facebed.com")
     replaced = True
   if THREADS_PATTERN.search(content):
     content = content.replace("threads.net", "fixthreads.com")
+    replaced = True
+  if REDDIT_PATTERN.search(content):
+    content = content.replace("reddit.com", "fxreddit.seria.moe").replace("redd.it", "fxreddit.seria.moe")
+    replaced = True
+  if PIXIV_PATTERN.search(content):
+    content = content.replace("pixiv.net", "phixiv.net")
+    replaced = True
+  if BLUESKY_PATTERN.search(content):
+    content = content.replace("bsky.app", "bskx.app")
+    replaced = True
+  if NICO_PATTERN.search(content):
+    content = content.replace("nicovideo.jp", "nicovideo.gay")
     replaced = True
 
   if replaced:
