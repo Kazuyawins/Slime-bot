@@ -1,3 +1,4 @@
+
 import asyncio
 import datetime
 import io
@@ -29,6 +30,7 @@ LOG_CONFIG_FILE = "log_channel_config.txt"
 RESPONSES_FILE = "custom_responses.txt"
 WELCOME_FILE = "welcome_settings.txt"
 LEAVE_CONFIG_FILE = "leave_config.txt"
+SPAM_CONFIG_FILE = "spam_settings.txt"
 
 def load_notification_channel_id():
   if os.path.exists(CONFIG_FILE):
@@ -135,6 +137,29 @@ def save_leave_settings(guild_id, channel_id):
     print(f"退出通知設定の保存に失敗しました: {e}")
 
 LEAVE_GUILD_ID, LEAVE_CHANNEL_ID = load_leave_settings()
+
+# --- スパム設定の永続化管理 ---
+def load_spam_settings():
+  if os.path.exists(SPAM_CONFIG_FILE):
+    try:
+      with open(SPAM_CONFIG_FILE, "r", encoding="utf-8") as f:
+        data = json.load(f)
+        return {int(k): v for k, v in data.items()}
+    except Exception as e:
+      print(f"スパム設定の読み込みに失敗しました: {e}")
+  return {}
+
+def save_spam_settings():
+  try:
+    with open(SPAM_CONFIG_FILE, "w", encoding="utf-8") as f:
+      json.dump({str(k): v for k, v in SPAM_SETTINGS.items()}, f, ensure_ascii=False, indent=2)
+  except Exception as e:
+    print(f"スパム設定の保存に失敗しました: {e}")
+
+SPAM_SETTINGS = load_spam_settings()
+
+# ユーザーごとのメッセージ送信履歴保持用 (guild_id -> {user_id: deque([timestamp, ...])})
+user_message_history = defaultdict(lambda: defaultdict(deque))
 
 JST = ZoneInfo("Asia/Tokyo")
 
@@ -250,6 +275,58 @@ async def logtoggle(interaction: discord.Interaction):
   )
 
 
+# --- スパム設定コマンド ---
+@bot.tree.command(
+    name="spamsetting",
+    description="【管理者用】スパム対策（自動タイムアウト・キック・BAN）を設定します",
+)
+@app_commands.default_permissions(administrator=True)
+@app_commands.describe(
+    enabled="スパム対策を有効にするか (True: オン, False: オフ)",
+    seconds="何秒間の間に制限するか（例: 5）",
+    count="何件メッセージを送ったら制限するか（例: 5）",
+    action="処分方法 (timeout: タイムアウト, kick: キック, ban: BAN)",
+    timeout_duration="タイムアウトさせる秒数（actionがtimeoutの時のみ有効、例: 300）",
+    warn_message="検知時にユーザーへ送信する警告メッセージ（任意）",
+)
+@app_commands.choices(
+    action=[
+        app_commands.Choice(name="タイムアウト (timeout)", value="timeout"),
+        app_commands.Choice(name="キック (kick)", value="kick"),
+        app_commands.Choice(name="BAN (ban)", value="ban"),
+    ]
+)
+async def spamsetting(
+    interaction: discord.Interaction,
+    enabled: bool,
+    seconds: int,
+    count: int,
+    action: str,
+    timeout_duration: int = 300,
+    warn_message: str = "スパム行為が検知されたため制限されました。",
+):
+  guild_id = interaction.guild.id
+  SPAM_SETTINGS[guild_id] = {
+      "enabled": enabled,
+      "seconds": seconds,
+      "count": count,
+      "action": action,
+      "timeout_duration": timeout_duration,
+      "warn_message": warn_message,
+  }
+  save_spam_settings()
+
+  status_str = "🟢 有効 (オン)" if enabled else "🔴 無効 (オフ)"
+  await interaction.response.send_message(
+      f"✅ スパム設定を保存しました！\n"
+      f"・**状態:** {status_str}\n"
+      f"・**制限:** {seconds}秒間に {count}件\n"
+      f"・**処分方法:** {action}（タイムアウト時間: {timeout_duration}秒）\n"
+      f"・**警告メッセージ:** {warn_message}",
+      ephemeral=True,
+  )
+
+
 @bot.tree.command(
     name="test",
     description="【管理者用】日付お知らせのテスト送信と認証パネルの動作テストを行います",
@@ -322,6 +399,7 @@ async def exportconfig(interaction: discord.Interaction):
       "welcome_settings": {str(k): v for k, v in WELCOME_SETTINGS.items()},
       "leave_guild_id": LEAVE_GUILD_ID,
       "leave_channel_id": LEAVE_CHANNEL_ID,
+      "spam_settings": {str(k): v for k, v in SPAM_SETTINGS.items()},
   }
 
   json_bytes = json.dumps(export_data, ensure_ascii=False, indent=2).encode("utf-8")
@@ -342,7 +420,7 @@ async def exportconfig(interaction: discord.Interaction):
 @app_commands.default_permissions(administrator=True)
 @app_commands.describe(file="エクスポートしたJSONファイル")
 async def importconfig(interaction: discord.Interaction, file: discord.Attachment):
-  global NOTIFICATION_CHANNEL_ID, LOG_SETTINGS, CUSTOM_RESPONSES, WELCOME_SETTINGS, LEAVE_GUILD_ID, LEAVE_CHANNEL_ID
+  global NOTIFICATION_CHANNEL_ID, LOG_SETTINGS, CUSTOM_RESPONSES, WELCOME_SETTINGS, LEAVE_GUILD_ID, LEAVE_CHANNEL_ID, SPAM_SETTINGS
 
   if not file.filename.endswith(".json"):
     await interaction.response.send_message(
@@ -373,6 +451,10 @@ async def importconfig(interaction: discord.Interaction, file: discord.Attachmen
     LEAVE_GUILD_ID = data.get("leave_guild_id")
     LEAVE_CHANNEL_ID = data.get("leave_channel_id")
     save_leave_settings(LEAVE_GUILD_ID, LEAVE_CHANNEL_ID)
+
+    raw_spam = data.get("spam_settings", {})
+    SPAM_SETTINGS = {int(k): v for k, v in raw_spam.items()}
+    save_spam_settings()
 
     await interaction.response.send_message(
         "✅ 設定データのインポートと復元が正常に完了しました！", ephemeral=True
@@ -455,7 +537,7 @@ async def addrole(
 
   embed = discord.Embed(title=title, description=description, color=discord.Color.blue())
   view = MultiRoleButtonView(roles_data)
-  
+
   await interaction.channel.send(embed=embed, view=view)
   await interaction.response.send_message(
       "✅ 複数ロール取得の**絵文字ボタンパネル**を作成しました！", ephemeral=True
@@ -976,7 +1058,7 @@ def get_guild_log_channel(guild_id: int):
 async def on_message_delete(message: discord.Message):
   if message.author.bot or not message.guild:
     return
-  
+
   channel_id = get_guild_log_channel(message.guild.id)
   if channel_id is None:
     return
@@ -1006,7 +1088,7 @@ async def on_message_edit(before: discord.Message, after: discord.Message):
     return
   if before.content == after.content:
     return
-  
+
   channel_id = get_guild_log_channel(before.guild.id)
   if channel_id is None:
     return
@@ -1180,7 +1262,7 @@ async def on_member_join(member: discord.Member):
     embed = discord.Embed(title=title, description=formatted_text, color=discord.Color.blue())
     if member.avatar:
       embed.set_thumbnail(url=member.avatar.url)
-    
+
     content = member.mention if mention else None
     await channel.send(content=content, embed=embed)
   else:
@@ -1252,6 +1334,47 @@ async def on_message(message: discord.Message):
 
   if message.guild:
     guild_id = message.guild.id
+
+    # --- アンチスパム（荒らし対策）チェック ---
+    if guild_id in SPAM_SETTINGS:
+      spam_conf = SPAM_SETTINGS[guild_id]
+      if spam_conf.get("enabled", False):
+        # 管理者はスパム対象外にする場合 (必要に応じて)
+        if not message.author.guild_permissions.administrator:
+          limit_seconds = spam_conf.get("seconds", 5)
+          limit_count = spam_conf.get("count", 5)
+          action = spam_conf.get("action", "timeout")
+          timeout_dur = spam_conf.get("timeout_duration", 300)
+          warn_msg = spam_conf.get("warn_message", "スパム行為が検知されたため制限されました。")
+
+          now_ts = datetime.datetime.now(JST).timestamp()
+          history = user_message_history[guild_id][message.author.id]
+
+          # 古い履歴を削除
+          while history and history[0] < now_ts - limit_seconds:
+            history.popleft()
+
+          history.append(now_ts)
+
+          if len(history) >= limit_count:
+            try:
+              if action == "timeout":
+                duration_delta = datetime.timedelta(seconds=timeout_dur)
+                await message.author.timeout(duration_delta, reason="アンチスパム検知: 短時間の連続投稿")
+              elif action == "kick":
+                await message.author.kick(reason="アンチスパム検知: 短時間の連続投稿")
+              elif action == "ban":
+                await message.author.ban(reason="アンチスパム検知: 短時間の連続投稿", delete_message_days=0)
+              
+              await message.channel.send(f"{message.author.mention} {warn_msg}")
+            except Exception as e:
+              print(f"スパム処分の実行に失敗しました: {e}")
+            
+            # 履歴をクリア
+            history.clear()
+            return
+
+    # --- カスタム返信チェック ---
     if guild_id in CUSTOM_RESPONSES and message.content in CUSTOM_RESPONSES[guild_id]:
       await message.channel.send(CUSTOM_RESPONSES[guild_id][message.content])
       return
