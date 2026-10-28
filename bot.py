@@ -1,4 +1,3 @@
-
 import asyncio
 import datetime
 import io
@@ -217,6 +216,110 @@ async def send_date_announcement():
 @send_date_announcement.before_loop
 async def before_send_date_announcement():
   await bot.wait_until_ready()
+
+
+# --- 日英対応ヘルプ機能 ---
+def get_help_embed(lang="ja"):
+  if lang == "en":
+    embed = discord.Embed(
+        title="🤖 Bot Command & Feature Guide",
+        description="Here is a list of available commands and features for this bot.",
+        color=discord.Color.blue()
+    )
+    embed.add_field(
+        name="🔗 Link Transformation",
+        value="Automatically converts social media links (YouTube, X/Twitter, Instagram, TikTok, Facebook, Threads) for better preview. Includes a control panel to delete links (only for the message author).",
+        inline=False
+    )
+    embed.add_field(
+        name="⚙️ Admin Commands",
+        value=(
+            "• `/setchannel` - Set daily date notification channel.\n"
+            "• `/setlog` - Set logging channel (messages, channels, threads).\n"
+            "• `/logtoggle` - Enable/disable logging feature.\n"
+            "• `/spamsetting` - Configure anti-spam (timeout, kick, ban).\n"
+            "• `/setwelcome` - Configure welcome messages (Text or Embed).\n"
+            "• `/setleave` - Configure member leave duration tracking channel.\n"
+            "• `/addrole` - Create multi-role emoji button panels (up to 10).\n"
+            "• `/captcha_setup` - Create image verification (CAPTCHA) panels.\n"
+            "• `/addresponse` / `/delresponse` - Manage exact-match custom auto-replies.\n"
+            "• `/exportconfig` / `/importconfig` - Backup or restore bot settings (JSON).\n"
+            "• `/sendmessage` / `/sendembed` - Send custom bot messages."
+        ),
+        inline=False
+    )
+    embed.add_field(
+        name="🛠️ General Commands",
+        value=(
+            "• `/help` - Show this help guide.\n"
+            "• `/ping` - Check bot latency.\n"
+            "• `/avatar` - Display user avatar.\n"
+            "• `/history` - View registered custom responses."
+        ),
+        inline=False
+    )
+    embed.set_footer(text="Use the buttons below to switch languages.")
+  else:
+    embed = discord.Embed(
+        title="🤖 ボットのコマンド・機能一覧",
+        description="このサーバーで使用できる主なコマンドと機能のガイドです。",
+        color=discord.Color.blue()
+    )
+    embed.add_field(
+        name="🔗 SNSリンク自動変換",
+        value="YouTube、X（Twitter）、Instagram、TikTok、Facebook、Threadsのリンクを送信すると、見やすいビューに自動変換します。送信者本人のみ操作できる削除パネル付きです。",
+        inline=False
+    )
+    embed.add_field(
+        name="⚙️ 管理者用コマンド",
+        value=(
+            "• `/setchannel` - 日付が変わった際のお知らせチャンネルを設定\n"
+            "• `/setlog` - 各種ログ（メッセージ・チャンネル・スレッド）の通知先を設定\n"
+            "• `/logtoggle` - ログ通知機能の有効／無効を切り替え\n"
+            "• `/spamsetting` - スパム対策（自動タイムアウト・キック・BAN）を設定\n"
+            "• `/setwelcome` - ウェルカムメッセージを設定（テキスト・埋め込み対応）\n"
+            "• `/setleave` - メンバー退出時の滞在時間記録チャンネルを設定\n"
+            "• `/addrole` - 最大10個の絵文字ロール取得パネルを作成\n"
+            "• `/captcha_setup` - 画像認証（CAPTCHA）パネルを設置\n"
+            "• `/addresponse` / `/delresponse` - 完全一致のカスタム返信を登録・削除\n"
+            "• `/exportconfig` / `/importconfig` - 設定データのバックアップ・復元（JSON）\n"
+            "• `/sendmessage` / `/sendembed` - Botにテキストや埋め込みを送信させる"
+        ),
+        inline=False
+    )
+    embed.add_field(
+        name="🛠️ 一般コマンド",
+        value=(
+            "• `/help` - このヘルプガイドを表示\n"
+            "• `/ping` - Botの応答速度を確認\n"
+            "• `/avatar` - 指定したユーザーのアバターを表示\n"
+            "• `/history` - 登録されているカスタム返信一覧を表示"
+        ),
+        inline=False
+    )
+    embed.set_footer(text="下のボタンで表示言語を切り替えることができます。")
+  return embed
+
+class HelpLangButtonView(discord.ui.View):
+  def __init__(self):
+    super().__init__(timeout=None)
+
+  @discord.ui.button(label="日本語 (Japanese)", style=discord.ButtonStyle.primary, emoji="🇯🇵", custom_id="help_lang_ja")
+  async def lang_ja(self, interaction: discord.Interaction, button: discord.ui.Button):
+    embed = get_help_embed("ja")
+    await interaction.response.edit_message(embed=embed, view=self)
+
+  @discord.ui.button(label="English", style=discord.ButtonStyle.secondary, emoji="🇬🇧", custom_id="help_lang_en")
+  async def lang_en(self, interaction: discord.Interaction, button: discord.ui.Button):
+    embed = get_help_embed("en")
+    await interaction.response.edit_message(embed=embed, view=self)
+
+
+@bot.tree.command(name="help", description="ボットのコマンドや機能の一覧を表示します / Show bot command guide")
+async def help_command(interaction: discord.Interaction):
+  embed = get_help_embed("ja")
+  view = HelpLangButtonView()
+  await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 
 @bot.tree.command(
@@ -1212,6 +1315,7 @@ async def on_ready():
     bot.add_view(CaptchaPanelView())
     bot.add_view(MultiRoleButtonView())
     bot.add_view(LinkControlView(0, 0))
+    bot.add_view(HelpLangButtonView())
 
     for guild in bot.guilds:
       for role in guild.roles:
@@ -1365,11 +1469,11 @@ async def on_message(message: discord.Message):
                 await message.author.kick(reason="アンチスパム検知: 短時間の連続投稿")
               elif action == "ban":
                 await message.author.ban(reason="アンチスパム検知: 短時間の連続投稿", delete_message_days=0)
-              
+
               await message.channel.send(f"{message.author.mention} {warn_msg}")
             except Exception as e:
               print(f"スパム処分の実行に失敗しました: {e}")
-            
+
             # 履歴をクリア
             history.clear()
             return
