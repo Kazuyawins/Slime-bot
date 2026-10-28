@@ -340,11 +340,7 @@ class HelpLangButtonView(discord.ui.View):
 
 @bot.tree.command(
     name="help",
-    description="ボットのコマンドや機能の一覧を表示します",
-    description_localizations={
-        discord.Locale.american_english: "Show bot command and feature guide",
-        discord.Locale.british_english: "Show bot command and feature guide"
-    }
+    description="ボットのコマンドや機能の一覧を表示します"
 )
 async def help_command(interaction: discord.Interaction):
   embed = get_help_embed("ja")
@@ -354,11 +350,7 @@ async def help_command(interaction: discord.Interaction):
 
 @bot.tree.command(
     name="setchannel",
-    description="日付お知らせを送信するチャンネルを現在のチャンネルに設定します",
-    description_localizations={
-        discord.Locale.american_english: "Set the current channel for daily date notifications",
-        discord.Locale.british_english: "Set the current channel for daily date notifications"
-    }
+    description="日付お知らせを送信するチャンネルを現在のチャンネルに設定します"
 )
 @app_commands.default_permissions(manage_channels=True)
 async def setchannel(interaction: discord.Interaction):
@@ -374,11 +366,7 @@ async def setchannel(interaction: discord.Interaction):
 
 @bot.tree.command(
     name="setlog",
-    description="【管理者用】各種ログ（メッセージ・チャンネル・スレッド）を送信するチャンネルを設定します",
-    description_localizations={
-        discord.Locale.american_english: "[Admin] Set the logging channel for messages, channels, and threads",
-        discord.Locale.british_english: "[Admin] Set the logging channel for messages, channels, and threads"
-    }
+    description="【管理者用】各種ログ（メッセージ・チャンネル・スレッド）を送信するチャンネルを設定します"
 )
 @app_commands.default_permissions(manage_channels=True)
 async def setlog(interaction: discord.Interaction):
@@ -397,11 +385,7 @@ async def setlog(interaction: discord.Interaction):
 
 @bot.tree.command(
     name="logtoggle",
-    description="【管理者用】このサーバーのログ通知機能のオン（有効）／オフ（無効）を切り替えます",
-    description_localizations={
-        discord.Locale.american_english: "[Admin] Toggle the logging feature ON or OFF for this server",
-        discord.Locale.british_english: "[Admin] Toggle the logging feature ON or OFF for this server"
-    }
+    description="【管理者用】このサーバーのログ通知機能のオン（有効）／オフ（無効）を切り替えます"
 )
 @app_commands.default_permissions(manage_channels=True)
 async def logtoggle(interaction: discord.Interaction):
@@ -423,11 +407,7 @@ async def logtoggle(interaction: discord.Interaction):
 # --- スパム設定コマンド ---
 @bot.tree.command(
     name="spamsetting",
-    description="【管理者用】スパム対策（自動タイムアウト・キック・BAN）を設定します",
-    description_localizations={
-        discord.Locale.american_english: "[Admin] Configure anti-spam protection (timeout, kick, ban)",
-        discord.Locale.british_english: "[Admin] Configure anti-spam protection (timeout, kick, ban)"
-    }
+    description="【管理者用】スパム対策（自動タイムアウト・キック・BAN）を設定します"
 )
 @app_commands.default_permissions(administrator=True)
 @app_commands.describe(
@@ -478,11 +458,7 @@ async def spamsetting(
 
 @bot.tree.command(
     name="test",
-    description="【管理者用】日付お知らせのテスト送信と認証パネルの動作テストを行います",
-    description_localizations={
-        discord.Locale.american_english: "[Admin] Test daily announcement and captcha panel",
-        discord.Locale.british_english: "[Admin] Test daily announcement and captcha panel"
-    }
+    description="【管理者用】日付お知らせのテスト送信と認証パネルの動作テストを行います"
 )
 @app_commands.default_permissions(administrator=True)
 @app_commands.describe(role="認証テストで使用するロール（任意）")
@@ -515,11 +491,7 @@ async def test_command(interaction: discord.Interaction, role: discord.Role = No
 
 @bot.tree.command(
     name="testchannel",
-    description="【管理者用】指定したチャンネルに日付お知らせのテストメッセージを送信します",
-    description_localizations={
-        discord.Locale.american_english: "[Admin] Send a test daily announcement to a specified channel",
-        discord.Locale.british_english: "[Admin] Send a test daily announcement to a specified channel"
-    }
+    description="【管理者用】指定したチャンネルに日付お知らせのテストメッセージを送信します"
 )
 @app_commands.default_permissions(administrator=True)
 @app_commands.describe(channel="テスト送信先のチャンネル")
@@ -545,11 +517,7 @@ async def testchannel(interaction: discord.Interaction, channel: discord.TextCha
 # --- 設定のエクスポート（バックアップ）コマンド ---
 @bot.tree.command(
     name="exportconfig",
-    description="【管理者用】現在のすべての設定データをJSONファイルとしてエクスポートします",
-    description_localizations={
-        discord.Locale.american_english: "[Admin] Export all bot settings as a JSON file",
-        discord.Locale.british_english: "[Admin] Export all bot settings as a JSON file"
-    }
+    description="【管理者用】現在のすべての設定データをJSONファイルとしてエクスポートします"
 )
 @app_commands.default_permissions(administrator=True)
 async def exportconfig(interaction: discord.Interaction):
@@ -576,11 +544,7 @@ async def exportconfig(interaction: discord.Interaction):
 # --- 設定のインポート（復元）コマンド ---
 @bot.tree.command(
     name="importconfig",
-    description="【管理者用】エクスポートしたJSONファイルをアップロードして設定を復元します",
-    description_localizations={
-        discord.Locale.american_english: "[Admin] Import and restore bot settings from a JSON backup file",
-        discord.Locale.british_english: "[Admin] Import and restore bot settings from a JSON backup file"
-    }
+    description="【管理者用】エクスポートしたJSONファイルをアップロードして設定を復元します"
 )
 @app_commands.default_permissions(administrator=True)
 @app_commands.describe(file="エクスポートしたJSONファイル")
@@ -634,11 +598,7 @@ async def importconfig(interaction: discord.Interaction, file: discord.Attachmen
 # --- 複数ロール一括付与パネル作成コマンド（最大10個対応・絵文字のみ対応） ---
 @bot.tree.command(
     name="addrole",
-    description="【管理者用】最大10個までのロールをまとめて取得できるボタンパネル（絵文字のみ）を作成します",
-    description_localizations={
-        discord.Locale.american_english: "[Admin] Create a multi-role emoji button panel (up to 10 roles)",
-        discord.Locale.british_english: "[Admin] Create a multi-role emoji button panel (up to 10 roles)"
-    }
+    description="【管理者用】最大10個までのロールをまとめて取得できるボタンパネル（絵文字のみ）を作成します"
 )
 @app_commands.default_permissions(administrator=True)
 @app_commands.describe(
@@ -758,11 +718,7 @@ class MultiRoleButtonView(discord.ui.View):
 
 @bot.tree.command(
     name="addresponse",
-    description="【管理者用】メッセージが完全一致したときにBotが返す返信を登録します",
-    description_localizations={
-        discord.Locale.american_english: "[Admin] Register an exact-match custom auto-reply",
-        discord.Locale.british_english: "[Admin] Register an exact-match custom auto-reply"
-    }
+    description="【管理者用】メッセージが完全一致したときにBotが返す返信を登録します"
 )
 @app_commands.default_permissions(administrator=True)
 @app_commands.describe(
@@ -784,11 +740,7 @@ async def addresponse(interaction: discord.Interaction, keyword: str, response: 
 
 @bot.tree.command(
     name="delresponse",
-    description="【管理者用】登録したカスタム返信を削除します",
-    description_localizations={
-        discord.Locale.american_english: "[Admin] Delete a registered custom auto-reply",
-        discord.Locale.british_english: "[Admin] Delete a registered custom auto-reply"
-    }
+    description="【管理者用】登録したカスタム返信を削除します"
 )
 @app_commands.default_permissions(administrator=True)
 @app_commands.describe(keyword="削除したいキーワード")
@@ -810,11 +762,7 @@ async def delresponse(interaction: discord.Interaction, keyword: str):
 
 @bot.tree.command(
     name="history",
-    description="このサーバーに登録されている完全一致メッセージの一覧を表示します",
-    description_localizations={
-        discord.Locale.american_english: "View the list of registered exact-match custom responses",
-        discord.Locale.british_english: "View the list of registered exact-match custom responses"
-    }
+    description="このサーバーに登録されている完全一致メッセージの一覧を表示します"
 )
 @app_commands.default_permissions(manage_messages=True)
 async def history(interaction: discord.Interaction):
@@ -846,11 +794,7 @@ async def history(interaction: discord.Interaction):
 
 @bot.tree.command(
     name="setwelcome",
-    description="【管理者用】このサーバーのウェルカムメッセージを設定します（通常テキストまたは埋め込み対応）",
-    description_localizations={
-        discord.Locale.american_english: "[Admin] Configure welcome messages (Text or Embed)",
-        discord.Locale.british_english: "[Admin] Configure welcome messages (Text or Embed)"
-    }
+    description="【管理者用】このサーバーのウェルカムメッセージを設定します（通常テキストまたは埋め込み対応）"
 )
 @app_commands.default_permissions(manage_channels=True)
 @app_commands.describe(
@@ -892,11 +836,7 @@ async def setwelcome(
 
 @bot.tree.command(
     name="setleave",
-    description="【管理者用】メンバー退出時の滞在時間記録を送信するチャンネルを設定します",
-    description_localizations={
-        discord.Locale.american_english: "[Admin] Set the channel for member leave duration logs",
-        discord.Locale.british_english: "[Admin] Set the channel for member leave duration logs"
-    }
+    description="【管理者用】メンバー退出時の滞在時間記録を送信するチャンネルを設定します"
 )
 @app_commands.default_permissions(manage_channels=True)
 async def setleave(interaction: discord.Interaction):
@@ -913,11 +853,7 @@ async def setleave(interaction: discord.Interaction):
 
 @bot.tree.command(
     name="ping",
-    description="Botの応答速度（レイテンシ）を確認します",
-    description_localizations={
-        discord.Locale.american_english: "Check the bot's response latency",
-        discord.Locale.british_english: "Check the bot's response latency"
-    }
+    description="Botの応答速度（レイテンシ）を確認します"
 )
 async def ping(interaction: discord.Interaction):
   latency = round(bot.latency * 1000)
@@ -928,11 +864,7 @@ async def ping(interaction: discord.Interaction):
 
 @bot.tree.command(
     name="avatar",
-    description="指定したユーザー（または自分）のアバターを表示します",
-    description_localizations={
-        discord.Locale.american_english: "Display a user's avatar image",
-        discord.Locale.british_english: "Display a user's avatar image"
-    }
+    description="指定したユーザー（または自分）のアバターを表示します"
 )
 @app_commands.describe(user="アバターを確認したいユーザー（省略時は自分）")
 async def avatar(interaction: discord.Interaction, user: discord.User = None):
@@ -958,11 +890,7 @@ async def avatar(interaction: discord.Interaction, user: discord.User = None):
 
 @bot.tree.command(
     name="sendembed",
-    description="【管理者用】指定した内容の埋め込み（Embed）メッセージを送信します",
-    description_localizations={
-        discord.Locale.american_english: "[Admin] Send a custom embed message",
-        discord.Locale.british_english: "[Admin] Send a custom embed message"
-    }
+    description="【管理者用】指定した内容の埋め込み（Embed）メッセージを送信します"
 )
 @app_commands.default_permissions(administrator=True)
 @app_commands.describe(
@@ -999,11 +927,7 @@ async def sendembed(
 
 @bot.tree.command(
     name="sendmessage",
-    description="【管理者用】指定した通常のテキストメッセージをBotに送信させます",
-    description_localizations={
-        discord.Locale.american_english: "[Admin] Make the bot send a regular text message",
-        discord.Locale.british_english: "[Admin] Make the bot send a regular text message"
-    }
+    description="【管理者用】指定した通常のテキストメッセージをBotに送信させます"
 )
 @app_commands.default_permissions(administrator=True)
 @app_commands.describe(content="送信したいメッセージの内容")
@@ -1016,11 +940,7 @@ async def sendmessage(interaction: discord.Interaction, content: str):
 
 @bot.tree.command(
     name="captcha_setup",
-    description="認証パネル（ボタン）を設置します",
-    description_localizations={
-        discord.Locale.american_english: "[Admin] Set up an image verification (CAPTCHA) panel",
-        discord.Locale.british_english: "[Admin] Set up an image verification (CAPTCHA) panel"
-    }
+    description="認証パネル（ボタン）を設置します"
 )
 @app_commands.default_permissions(administrator=True)
 @app_commands.describe(role="認証完了時に付与するロール")
