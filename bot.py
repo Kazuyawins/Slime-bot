@@ -169,10 +169,10 @@ INSTAGRAM_PATTERN = re.compile(r"https?://(?:www\.)?instagram\.com/(p|reel|tv|st
 TIKTOK_PATTERN = re.compile(r"https?://(?:www\.|vm\.|vt\.)?tiktok\.com/\S+")
 FACEBOOK_PATTERN = re.compile(r"https?://(?:www\.)?(?:facebook\.com|fb\.watch)/\S+")
 THREADS_PATTERN = re.compile(r"https?://(?:www\.)?threads\.net/\S+")
-REDDIT_PATTERN = re.compile(r"https?://(?:www\.)?(?:reddit\.com|redd\.it)/\S+")
+REDDIT_PATTERN = re.compile(r"https?://(?:www\.)?(?:reddit\.com|redd\.it|reddit\.seria\.moe)/\S+")
 PIXIV_PATTERN = re.compile(r"https?://(?:www\.)?pixiv\.net/\S+")
-BLUESKY_PATTERN = re.compile(r"https?://(?:www\.)?bsky\.app/\S+")
-NICO_PATTERN = re.compile(r"https?://(?:www\.)?nicovideo\.jp/\S+")
+BLUESKY_PATTERN = re.compile(r"https?://(?:www\.)?(?:bsky\.app|Bluesky\.app)/\S+")
+NICO_PATTERN = re.compile(r"https?://(?:www\.)?nicovideo\.(?:jp|com)/\S+")
 
 
 async def handle_ping(request):
@@ -1612,16 +1612,16 @@ async def on_message(message: discord.Message):
     content = content.replace("threads.net", "fixthreads.com")
     replaced = True
   if REDDIT_PATTERN.search(content):
-    content = content.replace("reddit.com", "fxreddit.seria.moe").replace("redd.it", "fxreddit.seria.moe")
+    content = content.replace("reddit.com", "fxreddit.seria.moe").replace("redd.it", "fxreddit.seria.moe").replace("reddit.seria.moe", "fxreddit.seria.moe")
     replaced = True
   if PIXIV_PATTERN.search(content):
     content = content.replace("pixiv.net", "phixiv.net")
     replaced = True
   if BLUESKY_PATTERN.search(content):
-    content = content.replace("bsky.app", "bskx.app")
+    content = content.replace("bsky.app", "bskx.app").replace("Bluesky.app", "bskx.app")
     replaced = True
   if NICO_PATTERN.search(content):
-    content = content.replace("nicovideo.jp", "nicovideo.gay")
+    content = content.replace("nicovideo.jp", "nicovideo.gay").replace("nicovideo.com", "nicovideo.gay")
     replaced = True
 
   if replaced:
