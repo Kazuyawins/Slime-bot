@@ -6,6 +6,7 @@ import os
 import random
 import re
 import string
+import traceback
 from collections import defaultdict, deque
 from aiohttp import web
 import discord
@@ -61,7 +62,7 @@ def load_log_settings():
   if os.path.exists(LOG_CONFIG_FILE):
     try:
       with open(LOG_CONFIG_FILE, "r", encoding="utf-8") as f:
-        data = json.load(f)
+        data = json.loads(f.read())
         if isinstance(data, dict) and "guilds" in data:
           return {int(k): {"channel_id": v["channel_id"], "enabled": v.get("enabled", True)} for k, v in data["guilds"].items()}
     except Exception as e:
@@ -77,12 +78,57 @@ def save_log_settings():
 
 LOG_SETTINGS = load_log_settings()
 
+# --- サーバーごとのログ送信判定ヘルパー ---
+def get_guild_log_channel(guild_id: int):
+  if not guild_id or guild_id not in LOG_SETTINGS:
+    return None
+  settings = LOG_SETTINGS[guild_id]
+  if not settings.get("enabled", True):
+    return None
+  return settings.get("channel_id")
+
+async def send_error_log(guild: discord.Guild, title: str, error: Exception, details: str = None):
+  """エラー発生時にログチャンネルへエラー内容を送信する関数"""
+  if not guild:
+    return
+  channel_id = get_guild_log_channel(guild.id)
+  if not channel_id:
+    return
+  channel = bot.get_channel(channel_id)
+  if not channel:
+    try:
+      channel = await bot.fetch_channel(channel_id)
+    except Exception:
+      return
+
+  embed = discord.Embed(
+      title=f"⚠️ エラーが発生しました: {title}",
+      description=f"**エラー内容:** `{type(error).__name__}: {error}`",
+      color=discord.Color.dark_red(),
+      timestamp=datetime.datetime.now(JST)
+  )
+  if details:
+    embed.add_field(name="詳細情報", value=details, inline=False)
+  
+  if isinstance(error, discord.Forbidden):
+    embed.add_field(
+        name="💡 解決策のヒント",
+        value="・Botに必要な権限（メンバーのタイムアウト/キック/BANなど）が付与されているか確認してください。\n・Botの役職（ロール）が、対象ユーザーのロールよりも**上**に配置されているか確認してください。",
+        inline=False
+    )
+
+  embed.set_footer(text=f"{bot.user.name} / {guild.name}")
+  try:
+    await channel.send(embed=embed)
+  except Exception as e:
+    print(f"エラーログの送信自体に失敗しました: {e}")
+
 # --- カスタム返信（完全一致）の永続化管理 ---
 def load_custom_responses():
   if os.path.exists(RESPONSES_FILE):
     try:
       with open(RESPONSES_FILE, "r", encoding="utf-8") as f:
-        data = json.load(f)
+        data = json.loads(f.read())
         return {int(k): v for k, v in data.items()}
     except Exception as e:
       print(f"カスタム返信の読み込みに失敗しました: {e}")
@@ -102,7 +148,7 @@ def load_welcome_settings():
   if os.path.exists(WELCOME_FILE):
     try:
       with open(WELCOME_FILE, "r", encoding="utf-8") as f:
-        data = json.load(f)
+        data = json.loads(f.read())
         return {int(k): v for k, v in data.items()}
     except Exception as e:
       print(f"ウェルカム設定の読み込みに失敗しました: {e}")
@@ -122,7 +168,7 @@ def load_leave_settings():
   if os.path.exists(LEAVE_CONFIG_FILE):
     try:
       with open(LEAVE_CONFIG_FILE, "r", encoding="utf-8") as f:
-        data = json.load(f)
+        data = json.loads(f.read())
         return data.get("guild_id"), data.get("channel_id")
     except Exception as e:
       print(f"退出通知設定の読み込みに失敗しました: {e}")
@@ -142,7 +188,7 @@ def load_spam_settings():
   if os.path.exists(SPAM_CONFIG_FILE):
     try:
       with open(SPAM_CONFIG_FILE, "r", encoding="utf-8") as f:
-        data = json.load(f)
+        data = json.loads(f.read())
         return {int(k): v for k, v in data.items()}
     except Exception as e:
       print(f"スパム設定の読み込みに失敗しました: {e}")
@@ -162,7 +208,7 @@ user_message_history = defaultdict(lambda: defaultdict(deque))
 
 JST = ZoneInfo("Asia/Tokyo")
 
-# 各種SNSリンク判定用パターン
+# 各種SNSリンク判定・変換用パターン
 YOUTUBE_PATTERN = re.compile(r"https?://(?:www\.)?(?:youtube\.com/watch\?v=([\w-]+)|youtu\.be/([\w-]+))(\S*)")
 X_PATTERN = re.compile(r"https?://(?:www\.)?(?:twitter\.com|x\.com)/([a-zA-Z0-9_]+/status/\d+)(\S*)")
 INSTAGRAM_PATTERN = re.compile(r"https?://(?:www\.)?instagram\.com/(p|reel|tv|stories)/[\w-]+(\S*)")
@@ -259,16 +305,6 @@ def get_help_embed(lang="ja"):
         ),
         inline=False
     )
-    embed.add_field(
-        name="🛠️ General Commands",
-        value=(
-            "• `/help` - Show this help guide with language toggle.\n"
-            "• `/ping` - Check the bot's response latency.\n"
-            "• `/avatar` - Display a user's avatar image.\n"
-            "• `/history` - View the list of registered exact-match custom responses."
-        ),
-        inline=False
-    )
     embed.set_footer(text="Use the buttons below to switch languages.")
   else:
     embed = discord.Embed(
@@ -307,16 +343,6 @@ def get_help_embed(lang="ja"):
             "• `/addresponse` / `/delresponse` - 完全一致のカスタム返信を登録・削除\n"
             "• `/exportconfig` / `/importconfig` - 設定データのバックアップ・復元（JSON）\n"
             "• `/sendmessage` / `/sendembed` - Botにテキストや埋め込みを送信させる"
-        ),
-        inline=False
-    )
-    embed.add_field(
-        name="🛠️ 一般コマンド",
-        value=(
-            "• `/help` - このヘルプガイドを表示\n"
-            "• `/ping` - Botの応答速度を確認\n"
-            "• `/avatar` - 指定したユーザーのアバターを表示\n"
-            "• `/history` - 登録されているカスタム返信一覧を表示"
         ),
         inline=False
     )
@@ -366,7 +392,7 @@ async def setchannel(interaction: discord.Interaction):
 
 @bot.tree.command(
     name="setlog",
-    description="【管理者用】各種ログ（メッセージ・チャンネル・スレッド）を送信するチャンネルを設定します"
+    description="【管理者用】各種ログ（メッセージ・チャンネル・スレッド・エラー）を送信するチャンネルを設定します"
 )
 @app_commands.default_permissions(manage_channels=True)
 async def setlog(interaction: discord.Interaction):
@@ -404,7 +430,7 @@ async def logtoggle(interaction: discord.Interaction):
   )
 
 
-# --- スパム設定コマンド（任意の数値 ＋ 秒/分/時間/日 単位選択に対応） ---
+# --- スパム設定コマンド ---
 @bot.tree.command(
     name="spamsetting",
     description="【管理者用】スパム対策（自動タイムアウト・キック・BAN）を設定します"
@@ -444,7 +470,6 @@ async def spamsetting(
 ):
   guild_id = interaction.guild.id
 
-  # 単位を秒数に自動計算
   if timeout_unit == "seconds":
     timeout_seconds = timeout_value
     unit_str = f"{timeout_value}秒"
@@ -621,7 +646,7 @@ async def importconfig(interaction: discord.Interaction, file: discord.Attachmen
     )
 
 
-# --- 複数ロール一括付与パネル作成コマンド（最大10個対応・絵文字のみ対応） ---
+# --- 複数ロール一括付与パネル作成コマンド ---
 @bot.tree.command(
     name="addrole",
     description="【管理者用】最大10個までのロールをまとめて取得できるボタンパネル（絵文字のみ）を作成します"
@@ -820,7 +845,7 @@ async def history(interaction: discord.Interaction):
 
 @bot.tree.command(
     name="setwelcome",
-    description="【管理者用】このサーバーのウェルカムメッセージを設定します（通常テキストまたは埋め込み対応）"
+    description="【管理者用】このサーバーのウェルカムメッセージを設定します"
 )
 @app_commands.default_permissions(manage_channels=True)
 @app_commands.describe(
@@ -1133,9 +1158,10 @@ class CaptchaModal(discord.ui.Modal, title="CAPTCHA画像認証"):
             "🎉 認証に成功しました！ロールが付与されました。",
             ephemeral=True,
         )
-      except discord.Forbidden:
+      except Exception as e:
+        await send_error_log(interaction.guild, "CAPTCHAロール付与失敗", e, f"対象ユーザー: {interaction.user.mention}")
         await interaction.response.send_message(
-            "❌ ボットにロールを付与する権限がありません。", ephemeral=True
+            "❌ ロール付与に失敗しました。管理者にお問い合わせください。", ephemeral=True
         )
     else:
       await interaction.response.send_message(
@@ -1144,12 +1170,96 @@ class CaptchaModal(discord.ui.Modal, title="CAPTCHA画像認証"):
       )
 
 
-# --- リンク削除用の統合ビュー（元のリンクのみ消す場合はBotメッセージを残すように修正） ---
+# --- リンク変換・更新処理用の統合関数 ---
+def transform_links(content: str) -> tuple[str, bool]:
+  replaced = False
+  
+  # YouTube (koutube)
+  if YOUTUBE_PATTERN.search(content):
+    content = content.replace("youtube.com", "koutube.com").replace("youtu.be", "koutube.com")
+    replaced = True
+    
+  # X / Twitter (fxtwitter)
+  if X_PATTERN.search(content):
+    content = content.replace("twitter.com", "fxtwitter.com").replace("x.com", "fxtwitter.com")
+    replaced = True
+    
+  # Instagram (oginstagram)
+  if INSTAGRAM_PATTERN.search(content):
+    content = content.replace("instagram.com", "oginstagram.com")
+    replaced = True
+    
+  # TikTok (tnktok)
+  if TIKTOK_PATTERN.search(content):
+    content = re.sub(r"https?://(?:www\.|vm\.|vt\.)?tiktok\.com", "https://tnktok.com", content)
+    replaced = True
+    
+  # Facebook (facebed)
+  if FACEBOOK_PATTERN.search(content):
+    content = content.replace("facebook.com", "facebed.com")
+    replaced = True
+    
+  # Threads (fixthreads)
+  if THREADS_PATTERN.search(content):
+    content = content.replace("threads.net", "fixthreads.com")
+    replaced = True
+    
+  # Reddit (fxreddit.seria.moe)
+  if REDDIT_PATTERN.search(content):
+    content = content.replace("reddit.com", "fxreddit.seria.moe").replace("redd.it", "fxreddit.seria.moe").replace("reddit.seria.moe", "fxreddit.seria.moe")
+    replaced = True
+    
+  # Pixiv (phixiv)
+  if PIXIV_PATTERN.search(content):
+    content = content.replace("pixiv.net", "phixiv.net")
+    replaced = True
+    
+  # Bluesky (bskx)
+  if BLUESKY_PATTERN.search(content):
+    content = content.replace("bsky.app", "bskx.app").replace("Bluesky.app", "bskx.app")
+    replaced = True
+    
+  # Niconico (nicovideo.gay)
+  if NICO_PATTERN.search(content):
+    content = content.replace("nicovideo.jp", "nicovideo.gay").replace("nicovideo.com", "nicovideo.gay")
+    replaced = True
+
+  return content, replaced
+
+
+# --- リンク制御 & 更新ボタン付きビュー ---
 class LinkControlView(discord.ui.View):
-  def __init__(self, author_id: int, user_message_id: int):
+  def __init__(self, author_id: int, user_message_id: int, original_content: str):
     super().__init__(timeout=None)
     self.author_id = author_id
     self.user_message_id = user_message_id
+    self.original_content = original_content
+
+  @discord.ui.button(
+      label="更新する", style=discord.ButtonStyle.success, emoji="🔄", custom_id="update_converted_link_btn"
+  )
+  async def update_link_button(
+      self, interaction: discord.Interaction, button: discord.ui.Button
+  ):
+    try:
+      # 元のユーザーメッセージを取得し直して最新のテキストに再変換・更新を試みる
+      try:
+        user_msg = await interaction.channel.fetch_message(self.user_message_id)
+        current_text = user_msg.content
+      except Exception:
+        current_text = self.original_content
+
+      new_content, _ = transform_links(current_text)
+      # Discordで埋め込み（高評価・サムネイルなど）を再強制的に再読み込みさせるため、
+      # コンテンツ末尾に不可視のゼロ幅スペース等を付与して再編集を行う
+      updated_display_content = f"{new_content}\n\n-# 🔄 更新済み"
+
+      await interaction.message.edit(content=updated_display_content, view=self)
+      await interaction.response.send_message("✅ リンクと埋め込み情報（プレビュー・高評価等）を更新しました！", ephemeral=True)
+    except discord.NotFound:
+      await interaction.response.send_message("❌ 元のメッセージが見つかりませんでした。", ephemeral=True)
+    except Exception as e:
+      await interaction.response.send_message(f"❌ 更新に失敗しました: {e}", ephemeral=True)
 
   @discord.ui.button(
       label="Botのリンクを消す", style=discord.ButtonStyle.secondary, emoji="🧹", custom_id="delete_bot_msg_btn"
@@ -1187,7 +1297,6 @@ class LinkControlView(discord.ui.View):
       return
 
     try:
-      # ユーザーが送信した元のメッセージだけを削除する（Botメッセージは残す）
       user_msg = await interaction.channel.fetch_message(self.user_message_id)
       await user_msg.delete()
       await interaction.response.defer()
@@ -1201,17 +1310,7 @@ class LinkControlView(discord.ui.View):
       )
 
 
-# --- サーバーごとのログ送信判定ヘルパー ---
-def get_guild_log_channel(guild_id: int):
-  if not guild_id or guild_id not in LOG_SETTINGS:
-    return None
-  settings = LOG_SETTINGS[guild_id]
-  if not settings.get("enabled", True):
-    return None
-  return settings.get("channel_id")
-
-
-# --- メッセージ・チャンネル・スレッドのログ通知イベントハンドラー（サーバーごとに独立） ---
+# --- メッセージ・チャンネル・スレッドのログ通知イベントハンドラー ---
 @bot.event
 async def on_message_delete(message: discord.Message):
   if message.author.bot or not message.guild:
@@ -1369,7 +1468,7 @@ async def on_ready():
   if not getattr(bot, "_persistent_views_added", False):
     bot.add_view(CaptchaPanelView())
     bot.add_view(MultiRoleButtonView())
-    bot.add_view(LinkControlView(0, 0))
+    bot.add_view(LinkControlView(0, 0, ""))
     bot.add_view(HelpLangButtonView())
 
     for guild in bot.guilds:
@@ -1382,7 +1481,6 @@ async def on_ready():
   try:
     synced = await bot.tree.sync()
     print(f"グローバル同期成功: {len(synced)} 個のコマンド")
-    print("同期済みコマンド:", ", ".join(cmd.name for cmd in synced))
   except Exception as e:
     print(f"グローバル同期エラー ({type(e).__name__}): {e}")
 
@@ -1526,6 +1624,13 @@ async def on_message(message: discord.Message):
               await message.channel.send(f"{message.author.mention} {warn_msg}")
             except Exception as e:
               print(f"スパム処分の実行に失敗しました: {e}")
+              await send_error_log(
+                  message.guild,
+                  "スパム処分の実行失敗",
+                  e,
+                  f"対象ユーザー: {message.author.mention} (`{message.author.id}`)\n"
+                  f"実行しようとしたアクション: `{action}` (設定時間: {timeout_dur}秒)"
+              )
 
             history.clear()
             return
@@ -1535,44 +1640,28 @@ async def on_message(message: discord.Message):
       await message.channel.send(CUSTOM_RESPONSES[guild_id][message.content])
       return
 
-  content = message.content
-  replaced = False
-
-  # 各種リンクの自動変換処理
-  if YOUTUBE_PATTERN.search(content):
-    content = content.replace("youtube.com", "koutube.com").replace("youtu.be", "koutube.com")
-    replaced = True
-  if X_PATTERN.search(content):
-    content = content.replace("twitter.com", "fxtwitter.com").replace("x.com", "fxtwitter.com")
-    replaced = True
-  if INSTAGRAM_PATTERN.search(content):
-    content = content.replace("instagram.com", "oginstagram.com")
-    replaced = True
-  if TIKTOK_PATTERN.search(content):
-    content = re.sub(r"https?://(?:www\.|vm\.|vt\.)?tiktok\.com", "https://tnktok.com", content)
-    replaced = True
-  if FACEBOOK_PATTERN.search(content):
-    content = content.replace("facebook.com", "facebed.com")
-    replaced = True
-  if THREADS_PATTERN.search(content):
-    content = content.replace("threads.net", "fixthreads.com")
-    replaced = True
-  if REDDIT_PATTERN.search(content):
-    content = content.replace("reddit.com", "fxreddit.seria.moe").replace("redd.it", "fxreddit.seria.moe").replace("reddit.seria.moe", "fxreddit.seria.moe")
-    replaced = True
-  if PIXIV_PATTERN.search(content):
-    content = content.replace("pixiv.net", "phixiv.net")
-    replaced = True
-  if BLUESKY_PATTERN.search(content):
-    content = content.replace("bsky.app", "bskx.app").replace("Bluesky.app", "bskx.app")
-    replaced = True
-  if NICO_PATTERN.search(content):
-    content = content.replace("nicovideo.jp", "nicovideo.gay").replace("nicovideo.com", "nicovideo.gay")
-    replaced = True
+  # --- リンク自動変換処理 ---
+  new_content, replaced = transform_links(message.content)
 
   if replaced:
-    view = LinkControlView(message.author.id, message.id)
-    await message.channel.send(content, view=view)
+    view = LinkControlView(message.author.id, message.id, message.content)
+    await message.channel.send(new_content, view=view)
+
+
+# --- スラッシュコマンド共通エラーハンドラー ---
+@bot.tree.error
+async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+  guild = interaction.guild
+  if guild:
+    await send_error_log(
+        guild,
+        f"コマンド実行エラー (`/{interaction.command.name if interaction.command else '不明'}`)",
+        error,
+        f"実行ユーザー: {interaction.user.mention}"
+    )
+  
+  if not interaction.response.is_done():
+    await interaction.response.send_message("❌ コマンド実行中にエラーが発生しました。", ephemeral=True)
 
 
 async def main():
