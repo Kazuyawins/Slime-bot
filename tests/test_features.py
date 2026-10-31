@@ -129,14 +129,16 @@ class FeatureTests(unittest.IsolatedAsyncioTestCase):
                 )
             ),
             message=NS(edit=AsyncMock()),
-            response=NS(send_message=AsyncMock()),
+            response=NS(defer=AsyncMock()),
+            followup=NS(send=AsyncMock()),
         )
         await view.update_link_button.callback(interaction)
         self.assertIn(
             "fxtwitter.com/u/status/456",
             interaction.message.edit.call_args.kwargs["content"],
         )
-        interaction.response.send_message.assert_awaited_once()
+        interaction.response.defer.assert_awaited_once_with(ephemeral=True)
+        interaction.followup.send.assert_awaited_once()
 
     async def test_slash_error_logs_and_replies(self):
         from slime import lifecycle

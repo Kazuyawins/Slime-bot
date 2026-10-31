@@ -95,25 +95,43 @@ class LinkControlView(discord.ui.View):
     async def update_link_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
+        await interaction.response.defer(ephemeral=True)
         try:
-            try:
-                user_msg = await interaction.channel.fetch_message(self.user_message_id)
-                current_text = user_msg.content
-            except Exception:
-                current_text = self.original_content
-            new_content, _ = transform_links(current_text)
+            current_text = self.original_content
+            if self.user_message_id:
+                try:
+                    user_msg = await interaction.channel.fetch_message(self.user_message_id)
+                    current_text = user_msg.content
+                except discord.HTTPException:
+                    pass
+
+            new_content, replaced = transform_links(current_text)
+            if not replaced or not re.search(r"https?://\S+", new_content):
+                # Persistent views are restored with (0, 0, "") on restart.
+                # Already-converted URLs must not be transformed a second time.
+                new_content = re.sub(
+                    r"(?:\n\n-# 🔄 更新済み)+$", "", interaction.message.content
+                )
+            if not re.search(r"https?://\S+", new_content):
+                await interaction.followup.send(
+                    "❌ 更新できるリンクが見つかりません。表示中のメッセージは変更していません。",
+                    ephemeral=True,
+                )
+                return
+
             updated_display_content = f"{new_content}\n\n-# 🔄 更新済み"
-            await interaction.message.edit(content=updated_display_content, view=self)
-            await interaction.response.send_message(
-                "✅ リンクと埋め込み情報（プレビュー・高評価等）を更新しました！",
+            # Keep the existing controls and request that previews are unsuppressed.
+            await interaction.message.edit(content=updated_display_content, suppress=False)
+            await interaction.followup.send(
+                "✅ リンクの表示を更新しました。プレビューへの反映には時間がかかる場合があります。",
                 ephemeral=True,
             )
         except discord.NotFound:
-            await interaction.response.send_message(
-                "❌ 元のメッセージが見つかりませんでした。", ephemeral=True
+            await interaction.followup.send(
+                "❌ 更新先のメッセージが見つかりませんでした。", ephemeral=True
             )
         except Exception as e:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 f"❌ 更新に失敗しました: {e}", ephemeral=True
             )
 
