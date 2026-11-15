@@ -50,7 +50,7 @@ class TwitterNotifier:
                 ephemeral=True
             )
 
-    @tasks.loop(minutes=5)
+    @tasks.loop(seconds=5)
     async def check_twitter_loop(self):
         settings = load_twitter_settings()
         if not settings:
