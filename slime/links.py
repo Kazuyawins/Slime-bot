@@ -12,8 +12,8 @@ def transform_links(content: str) -> tuple[str, bool]:
         )
         replaced = True
     if X_PATTERN.search(content):
-        content = content.replace("twitter.com", "fxtwitter.com").replace(
-            "x.com", "fxtwitter.com"
+        content = content.replace("twitter.com", "fixupx.com").replace(
+            "x.com", "fixupx.com"
         )
         replaced = True
     if INSTAGRAM_PATTERN.search(content):
