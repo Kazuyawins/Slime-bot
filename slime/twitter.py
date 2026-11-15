@@ -19,9 +19,13 @@ def save_twitter_settings(data):
 class TwitterNotifier:
     def __init__(self, bot):
         self.bot = bot
-        # タスクが開始していなければループをスタート
-        if not self.check_twitter_loop.is_running():
-            self.check_twitter_loop.start()
+        
+        # __init__ 内での即座の .start() をやめ、
+        # ボットの準備完了時 (on_ready) にタスクが安全に開始されるようにイベントを登録します
+        @self.bot.event
+        async def on_ready():
+            if not self.check_twitter_loop.is_running():
+                self.check_twitter_loop.start()
 
     def register_commands(self):
         @self.bot.tree.command(
@@ -36,7 +40,7 @@ class TwitterNotifier:
             settings[guild_id] = {
                 "channel_id": interaction.channel_id,
                 "username": username,
-                "last_post_id": None  # 重複送信防止用
+                "last_post_id": None
             }
             save_twitter_settings(settings)
             
@@ -60,16 +64,11 @@ class TwitterNotifier:
                 continue
 
             try:
-                # TODO: ここでXの最新ポストを取得する処理を実装します
-                # 例: latest_post = await fetch_latest_post(username)
-                # if latest_post and latest_post['id'] != data.get('last_post_id'):
-                #     await channel.send(f"📢 @{username} の新しいポスト:\n{latest_post['url']}")
-                #     data['last_post_id'] = latest_post['id']
-                #     save_twitter_settings(settings)
+                # TODO: Xのポスト取得・送信処理をここに実装します
                 pass
             except Exception as e:
                 print(f"Twitter fetch error for {username}: {e}")
 
     @check_twitter_loop.before_loop
-    async def before_check_twitter(self):
+    async def before_check_twitter_loop(self):
         await self.bot.wait_until_ready()
